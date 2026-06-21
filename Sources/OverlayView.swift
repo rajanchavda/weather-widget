@@ -3,19 +3,49 @@ import SwiftUI
 // Display settings that will be controlled from the menu bar status item
 class OverlaySettings: ObservableObject {
     @Published var showAurora: Bool = true
-    @Published var showBottomLine: Bool = true
+    @Published var showBottomLine: Bool = false
     @Published var selectedUnit: WeatherUnit = .celsius
-    
+    @Published var brightness: Double = 1.0 // 0.0 to 1.0
+    @Published var manualWeatherCode: Int? = nil // nil = auto (use real weather)
+
     enum WeatherUnit: String, CaseIterable {
         case celsius = "°C"
         case fahrenheit = "°F"
+    }
+
+    enum AuroraStyle: String, CaseIterable {
+        case auto = "Auto (Weather-based)"
+        case clearDay = "Clear Day"
+        case clearNight = "Clear Night"
+        case cloudy = "Cloudy"
+        case fog = "Foggy"
+        case rain = "Rainy"
+        case snow = "Snowy"
+        case thunderstorm = "Thunderstorm"
+
+        var weatherCode: Int? {
+            switch self {
+            case .auto: return nil
+            case .clearDay: return 0
+            case .clearNight: return 0
+            case .cloudy: return 3
+            case .fog: return 45
+            case .rain: return 61
+            case .snow: return 73
+            case .thunderstorm: return 95
+            }
+        }
+
+        var forceNight: Bool {
+            return self == .clearNight
+        }
     }
 }
 
 struct OverlayView: View {
     @ObservedObject var weatherManager: WeatherManager
     @ObservedObject var settings: OverlaySettings
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .bottom) {
@@ -23,8 +53,40 @@ struct OverlayView: View {
                 if settings.showAurora {
                     auroraView
                         .transition(.opacity)
+
+                    // Stars for clear night sky
+                    if shouldShowStars() {
+                        starsView(width: geometry.size.width, height: geometry.size.height)
+                    }
+
+                    // Weather particles
+                    let code = getEffectiveWeatherCode()
+
+                    // Rain animation (light rain)
+                    if code >= 51 && code <= 67 {
+                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .light)
+                            .id("rain-light-\(code)")
+                    }
+
+                    // Showers (medium rain)
+                    if code >= 80 && code <= 82 {
+                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .medium)
+                            .id("rain-medium-\(code)")
+                    }
+
+                    // Thunderstorm (heavy continuous rain)
+                    if code >= 95 && code <= 99 {
+                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .heavy)
+                            .id("rain-heavy-\(code)")
+                    }
+
+                    // Snow animation
+                    if (code >= 71 && code <= 77) || (code >= 85 && code <= 86) {
+                        SnowView(width: geometry.size.width, height: geometry.size.height)
+                            .id("snow-\(code)")
+                    }
                 }
-                
+
                 // 2. Sleek Bottom Temperature Forecast Line
                 if settings.showBottomLine && weatherManager.hourlyTemps.count >= 12 {
                     temperatureLineView(width: geometry.size.width, height: geometry.size.height)
@@ -32,10 +94,13 @@ struct OverlayView: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
+            .opacity(settings.brightness)
         }
         .animation(.easeInOut(duration: 0.8), value: weatherManager.weatherCode)
         .animation(.easeInOut(duration: 0.5), value: settings.showAurora)
         .animation(.easeInOut(duration: 0.5), value: settings.showBottomLine)
+        .animation(.easeInOut(duration: 0.3), value: settings.brightness)
+        .animation(.easeInOut(duration: 0.5), value: settings.manualWeatherCode)
     }
     
     // MARK: - Aurora (Ambient background gradient)
@@ -47,6 +112,52 @@ struct OverlayView: View {
             endPoint: .bottom
         )
         .ignoresSafeArea()
+    }
+
+    // MARK: - Stars (Clear night sky)
+    private func starsView(width: CGFloat, height: CGFloat) -> some View {
+        let starPositions = generateStarPositions(width: width, height: height)
+
+        return ZStack {
+            ForEach(0..<starPositions.count, id: \.self) { index in
+                let pos = starPositions[index]
+                Circle()
+                    .fill(Color.white.opacity(pos.opacity))
+                    .frame(width: pos.size, height: pos.size)
+                    .position(x: pos.x, y: pos.y)
+                    .animation(
+                        Animation.easeInOut(duration: pos.twinkleDuration)
+                            .repeatForever(autoreverses: true)
+                            .delay(pos.delay),
+                        value: settings.showAurora
+                    )
+            }
+        }
+    }
+
+    private func generateStarPositions(width: CGFloat, height: CGFloat) -> [(x: CGFloat, y: CGFloat, size: CGFloat, opacity: Double, twinkleDuration: Double, delay: Double)] {
+        var positions: [(CGFloat, CGFloat, CGFloat, Double, Double, Double)] = []
+        let starCount = Int(width / 25) // Roughly 1 star per 25 pixels width (4x more stars)
+
+        // Use a deterministic seed based on screen width for consistent star positions
+        var pseudoRandom = Int(width * 1000)
+        func nextRandom() -> Int {
+            pseudoRandom = (pseudoRandom &* 1103515245 &+ 12345) & 0x7fffffff
+            return pseudoRandom
+        }
+
+        for _ in 0..<starCount {
+            let x = CGFloat(nextRandom() % Int(width))
+            let y = CGFloat(nextRandom() % Int(height))
+            let size = CGFloat(0.8 + Double(nextRandom() % 120) / 100.0) // 0.8-2px (smaller variance)
+            let opacity = 0.4 + Double(nextRandom() % 60) / 100.0 // 0.4-1.0
+            let twinkleDuration = 1.2 + Double(nextRandom() % 350) / 100.0 // 1.2-4.7s
+            let delay = Double(nextRandom() % 300) / 100.0 // 0-3s
+
+            positions.append((x, y, size, opacity, twinkleDuration, delay))
+        }
+
+        return positions
     }
     
     // MARK: - Temperature Forecast Line
@@ -108,9 +219,9 @@ struct OverlayView: View {
     }
     
     private func getAuroraColors() -> [Color] {
-        let code = weatherManager.weatherCode
+        let code = settings.manualWeatherCode ?? weatherManager.weatherCode
         let isNight = checkIsNight()
-        
+
         switch code {
         case 0, 1: // Clear
             if isNight {
@@ -119,7 +230,7 @@ struct OverlayView: View {
                 return [Color.orange.opacity(0.12), Color.yellow.opacity(0.08), Color.clear]
             }
         case 2, 3: // Cloudy
-            return [Color.gray.opacity(0.15), Color.blue.opacity(0.08), Color.clear]
+            return [Color.gray.opacity(0.22), Color(white: 0.7).opacity(0.15), Color.blue.opacity(0.08), Color.clear]
         case 45, 48: // Fog
             return [Color.white.opacity(0.15), Color.gray.opacity(0.08), Color.clear]
         case 51...67, 80...82: // Rain / Drizzle
@@ -132,9 +243,184 @@ struct OverlayView: View {
             return [Color.blue.opacity(0.1), Color.clear]
         }
     }
-    
+
     private func checkIsNight() -> Bool {
         let hour = Calendar.current.component(.hour, from: Date())
         return hour < 6 || hour > 18
     }
+
+    private func getEffectiveWeatherCode() -> Int {
+        return settings.manualWeatherCode ?? weatherManager.weatherCode
+    }
+
+    private func shouldShowStars() -> Bool {
+        let code = getEffectiveWeatherCode()
+        return checkIsNight() && (code == 0 || code == 1)
+    }
+}
+
+// MARK: - Rain Animation
+
+struct RainView: View {
+    let width: CGFloat
+    let height: CGFloat
+    let intensity: RainIntensity
+
+    enum RainIntensity {
+        case light, medium, heavy
+
+        var dropCount: Int {
+            switch self {
+            case .light: return 15
+            case .medium: return 25
+            case .heavy: return 40
+            }
+        }
+
+        var baseSpeed: Double {
+            switch self {
+            case .light: return 0.9
+            case .medium: return 0.7
+            case .heavy: return 0.5
+            }
+        }
+
+        var isThunderstorm: Bool {
+            return self == .heavy
+        }
+    }
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let time = timeline.date.timeIntervalSinceReferenceDate
+
+                // Lightning flash for thunderstorms (every 4-8 seconds)
+                if intensity.isThunderstorm {
+                    let lightningCycle = time.truncatingRemainder(dividingBy: 6.0)
+                    if lightningCycle < 0.15 {
+                        let flashOpacity = lightningCycle < 0.08 ? 0.25 : (0.15 - lightningCycle) * 3.5
+                        context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white.opacity(flashOpacity)))
+                    }
+                }
+
+                for i in 0..<intensity.dropCount {
+                    let offset = Double(i) * 0.11
+
+                    // Create depth layers (3 layers: near, mid, far)
+                    let layerSeed = (i * 7) % 3
+                    let depthFactor = layerSeed == 0 ? 1.3 : (layerSeed == 1 ? 1.0 : 0.7)
+
+                    // Speed varies by depth (closer = faster)
+                    let speed = intensity.baseSpeed / depthFactor
+                    let cycle = (time + offset).truncatingRemainder(dividingBy: speed)
+                    let progress = cycle / speed
+
+                    // Horizontal position with slight wind drift
+                    let baseX = (Double(i) * 73.0).truncatingRemainder(dividingBy: Double(size.width))
+                    let windDrift = sin(time * 0.3 + Double(i)) * 3.0
+                    let x = baseX + windDrift
+
+                    // Vertical position
+                    let y = progress * (Double(size.height) + 15) - 10
+
+                    // Drop properties based on depth
+                    let dropWidth = 1.0 * depthFactor // Thinner drops
+                    let dropHeight = (8.0 + Double((i * 13) % 6)) * depthFactor // 8-14px varying length
+                    let dropOpacity = 0.5 + (depthFactor * 0.3) // Closer = brighter
+
+                    // Draw raindrop streak (blue-tinted water)
+                    if progress < 0.9 {
+                        var dropPath = Path()
+                        dropPath.addRoundedRect(
+                            in: CGRect(x: x - dropWidth/2, y: y, width: dropWidth, height: dropHeight),
+                            cornerSize: CGSize(width: dropWidth/2, height: dropWidth/2)
+                        )
+                        let rainColor = Color(red: 0.6, green: 0.75, blue: 0.95)
+                        context.fill(dropPath, with: .color(rainColor.opacity(dropOpacity)))
+                    }
+
+                    // Splash with ripples (blue-tinted water)
+                    if progress > 0.85 && progress < 1.0 {
+                        let splashProgress = (progress - 0.85) / 0.15
+                        let splashY = Double(size.height) - 3
+
+                        let splashColor = Color(red: 0.65, green: 0.8, blue: 1.0)
+
+                        // Main splash
+                        let splash1Size = 3.0 + splashProgress * 5.0
+                        let splash1Opacity = (1.0 - splashProgress) * dropOpacity * 0.6
+                        context.fill(
+                            Path(ellipseIn: CGRect(x: x - splash1Size/2, y: splashY - splash1Size/2, width: splash1Size, height: splash1Size)),
+                            with: .color(splashColor.opacity(splash1Opacity))
+                        )
+
+                        // Outer ripple (only for closer drops)
+                        if depthFactor > 0.9 && splashProgress > 0.3 {
+                            let rippleSize = 5.0 + (splashProgress - 0.3) * 6.0
+                            let rippleOpacity = (1.0 - splashProgress) * 0.3
+                            context.stroke(
+                                Path(ellipseIn: CGRect(x: x - rippleSize/2, y: splashY - rippleSize/2, width: rippleSize, height: rippleSize)),
+                                with: .color(splashColor.opacity(rippleOpacity)),
+                                lineWidth: 0.8
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct RainDrop: Identifiable {
+    let id: Int
+    let x: CGFloat
+    let delay: Double
+    let speed: Double
+}
+
+// MARK: - Snow Animation
+
+struct SnowView: View {
+    let width: CGFloat
+    let height: CGFloat
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let time = timeline.date.timeIntervalSinceReferenceDate
+
+                let flakeCount = 25
+
+                for i in 0..<flakeCount {
+                    let offset = Double(i) * 0.2
+                    let speed = 3.0 + Double((i * 17) % 15) / 10.0 // 3.0-4.5s
+                    let cycle = (time + offset).truncatingRemainder(dividingBy: speed)
+                    let progress = cycle / speed
+
+                    // Calculate positions
+                    let baseX = Double((i * 73) % Int(width))
+                    let drift = sin((time + offset) * 0.5) * 15.0
+                    let x = baseX + drift
+                    let y = progress * (Double(height) + 20) - 10
+
+                    // Snowflake size
+                    let size = 2.0 + Double((i * 23) % 150) / 100.0 // 2-3.5px
+
+                    // Draw snowflake
+                    let flakeRect = CGRect(x: x - size/2, y: y - size/2, width: size, height: size)
+                    context.fill(Path(ellipseIn: flakeRect), with: .color(.white.opacity(0.8)))
+                }
+            }
+        }
+    }
+}
+
+struct Snowflake: Identifiable {
+    let id: Int
+    let x: CGFloat
+    let size: CGFloat
+    let speed: Double
+    let delay: Double
+    let drift: CGFloat
 }

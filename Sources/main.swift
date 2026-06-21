@@ -95,11 +95,54 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             item.state = settings.selectedUnit == unit ? .on : .off
             unitMenu.addItem(item)
         }
-        
+
         let unitItem = NSMenuItem(title: "Temperature Unit", action: nil, keyEquivalent: "")
         unitItem.submenu = unitMenu
         menu.addItem(unitItem)
-        
+
+        // Brightness Submenu
+        let brightnessMenu = NSMenu()
+        let brightnessLevels: [(String, Double)] = [
+            ("100%", 1.0),
+            ("75%", 0.75),
+            ("50%", 0.5),
+            ("25%", 0.25)
+        ]
+        for level in brightnessLevels {
+            let item = NSMenuItem(title: level.0, action: #selector(setBrightness(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = level.1
+            item.state = abs(settings.brightness - level.1) < 0.01 ? .on : .off
+            brightnessMenu.addItem(item)
+        }
+
+        let brightnessItem = NSMenuItem(title: "Brightness", action: nil, keyEquivalent: "")
+        brightnessItem.submenu = brightnessMenu
+        menu.addItem(brightnessItem)
+
+        // Aurora Style Submenu
+        let auroraStyleMenu = NSMenu()
+        for style in OverlaySettings.AuroraStyle.allCases {
+            let item = NSMenuItem(title: style.rawValue, action: #selector(setAuroraStyle(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = style
+            let isCurrentStyle = (style.weatherCode == settings.manualWeatherCode) ||
+                                 (style == .auto && settings.manualWeatherCode == nil)
+            item.state = isCurrentStyle ? .on : .off
+            auroraStyleMenu.addItem(item)
+        }
+
+        let auroraStyleItem = NSMenuItem(title: "Try Different Aurora", action: nil, keyEquivalent: "")
+        auroraStyleItem.submenu = auroraStyleMenu
+        menu.addItem(auroraStyleItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Reset to Defaults
+        let resetItem = NSMenuItem(title: "Reset to Defaults", action: #selector(resetToDefaults), keyEquivalent: "")
+        resetItem.target = self
+        menu.addItem(resetItem)
+
         menu.addItem(NSMenuItem.separator())
         
         // Commands
@@ -202,8 +245,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func getWeatherEmoji(_ code: Int) -> String {
+        let isNight = checkIsNight()
+
         switch code {
-        case 0, 1: return "☀️"
+        case 0, 1: return isNight ? "🌙" : "☀️"
         case 2, 3: return "☁️"
         case 45, 48: return "🌫️"
         case 51...67: return "🌧️"
@@ -213,6 +258,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case 95...99: return "⛈️"
         default: return "🌤️"
         }
+    }
+
+    private func checkIsNight() -> Bool {
+        let hour = Calendar.current.component(.hour, from: Date())
+        return hour < 6 || hour > 18
     }
     
     // MARK: - Menu Selectors
@@ -234,21 +284,105 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func setWeatherUnit(_ sender: NSMenuItem) {
         if let unit = sender.representedObject as? OverlaySettings.WeatherUnit {
             settings.selectedUnit = unit
-            
+
             if let submenu = sender.menu {
                 for item in submenu.items {
                     item.state = (item.representedObject as? OverlaySettings.WeatherUnit) == unit ? .on : .off
                 }
             }
-            
+
             updateStatusItem(temp: weatherManager.currentTemp, code: weatherManager.weatherCode, city: weatherManager.cityName, hasData: weatherManager.hasData, error: weatherManager.errorMessage)
         }
     }
-    
+
+    @objc private func setBrightness(_ sender: NSMenuItem) {
+        if let brightness = sender.representedObject as? Double {
+            settings.brightness = brightness
+
+            if let submenu = sender.menu {
+                for item in submenu.items {
+                    if let itemBrightness = item.representedObject as? Double {
+                        item.state = abs(itemBrightness - brightness) < 0.01 ? .on : .off
+                    }
+                }
+            }
+        }
+    }
+
+    @objc private func setAuroraStyle(_ sender: NSMenuItem) {
+        if let style = sender.representedObject as? OverlaySettings.AuroraStyle {
+            settings.manualWeatherCode = style.weatherCode
+
+            if let submenu = sender.menu {
+                for item in submenu.items {
+                    if let itemStyle = item.representedObject as? OverlaySettings.AuroraStyle {
+                        let isCurrentStyle = (itemStyle.weatherCode == settings.manualWeatherCode) ||
+                                             (itemStyle == .auto && settings.manualWeatherCode == nil)
+                        item.state = isCurrentStyle ? .on : .off
+                    }
+                }
+            }
+        }
+    }
+
+    @objc private func resetToDefaults() {
+        settings.showAurora = true
+        settings.showBottomLine = false
+        settings.selectedUnit = .celsius
+        settings.brightness = 1.0
+        settings.manualWeatherCode = nil
+
+        // Update all menu checkboxes
+        if let menu = statusItem?.menu {
+            // Aurora toggle
+            if let auroraItem = menu.items.first(where: { $0.action == #selector(toggleAurora) }) {
+                auroraItem.state = settings.showAurora ? .on : .off
+            }
+
+            // Bottom line toggle
+            if let lineItem = menu.items.first(where: { $0.action == #selector(toggleBottomLine) }) {
+                lineItem.state = settings.showBottomLine ? .on : .off
+            }
+
+            // Temperature unit
+            for item in menu.items where item.title == "Temperature Unit" {
+                if let submenu = item.submenu {
+                    for unitItem in submenu.items {
+                        unitItem.state = (unitItem.representedObject as? OverlaySettings.WeatherUnit) == settings.selectedUnit ? .on : .off
+                    }
+                }
+            }
+
+            // Brightness
+            for item in menu.items where item.title == "Brightness" {
+                if let submenu = item.submenu {
+                    for brightnessItem in submenu.items {
+                        if let brightness = brightnessItem.representedObject as? Double {
+                            brightnessItem.state = abs(brightness - settings.brightness) < 0.01 ? .on : .off
+                        }
+                    }
+                }
+            }
+
+            // Aurora style
+            for item in menu.items where item.title == "Try Different Aurora" {
+                if let submenu = item.submenu {
+                    for styleItem in submenu.items {
+                        if let style = styleItem.representedObject as? OverlaySettings.AuroraStyle {
+                            styleItem.state = (style == .auto && settings.manualWeatherCode == nil) ? .on : .off
+                        }
+                    }
+                }
+            }
+        }
+
+        updateStatusItem(temp: weatherManager.currentTemp, code: weatherManager.weatherCode, city: weatherManager.cityName, hasData: weatherManager.hasData, error: weatherManager.errorMessage)
+    }
+
     @objc private func refreshWeather() {
         weatherManager.fetchWeather()
     }
-    
+
     @objc private func quitApp() {
         NSApplication.shared.terminate(nil)
     }
