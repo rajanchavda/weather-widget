@@ -1,0 +1,10 @@
+# macOS system files
+.DS_Store
+
+# Swift Package Manager build artifacts
+.build/
+.swiftpm/
+DerivedData/
+
+# Packages directory (if using local dependencies)
+Packages/
