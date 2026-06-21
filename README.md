@@ -1,5 +1,15 @@
 # Weather Menu Bar Overlay
 
+[![Platform](https://img.shields.io/badge/Platform-macOS%2013.0+-blue.svg)](https://www.apple.com/macos/)
+[![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org)
+[![SwiftUI](https://img.shields.io/badge/SwiftUI-✓-blueviolet.svg)](https://developer.apple.com/xcode/swiftui/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Weather API](https://img.shields.io/badge/Weather-Open--Meteo-brightgreen.svg)](https://open-meteo.com/)
+[![Battery Impact](https://img.shields.io/badge/Battery-Low%20Impact-success.svg)](#-performance--battery-optimization)
+[![GitHub stars](https://img.shields.io/github/stars/rajanchavda/weather-widget?style=social)](https://github.com/rajanchavda/weather-widget/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/rajanchavda/weather-widget.svg)](https://github.com/rajanchavda/weather-widget/issues)
+[![Maintained](https://img.shields.io/badge/Maintained-Yes-brightgreen.svg)](https://github.com/rajanchavda/weather-widget/commits/main)
+
 A beautiful macOS menu bar weather application that displays real-time weather conditions with atmospheric visual effects, twinkling stars on clear nights, and a temperature forecast graph.
 
 ## ✨ Features
