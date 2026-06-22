@@ -54,6 +54,7 @@ cat <<EOF > "${APP_DIR}/Contents/Info.plist"
 EOF
 
 echo "=== Step 5: Packaging App Bundle into ZIP ==="
+codesign --force --deep --sign - "$APP_DIR"
 rm -f "$ZIP_NAME"
 zip -q -r "$ZIP_NAME" "$APP_DIR"
 
@@ -80,6 +81,11 @@ cask "weatheroverlay" do
   homepage "https://github.com/<your-github-username>/WeatherOverlay"
 
   app "WeatherOverlay.app"
+
+  postflight do
+    system_command "xattr",
+                   args: ["-cr", "#{appdir}/WeatherOverlay.app"]
+  end
 
   # Allows cleanly uninstalling application leftovers
   zap trash: [
