@@ -55,8 +55,8 @@ brew install rajanchavda/tap/weatheroverlay
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/weather-menu-bar.git
-   cd weather-menu-bar
+   git clone https://github.com/rajanchavda/weather-widget.git
+   cd weather-widget
    ```
 
 2. **Build the app:**
