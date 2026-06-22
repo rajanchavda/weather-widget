@@ -31,7 +31,13 @@ A beautiful macOS menu bar weather application that displays real-time weather c
 
 ## 📦 Installation
 
-### Option 1: Build from Source (Recommended)
+### Option 1: Install via Homebrew (Recommended)
+
+```bash
+brew install rajanchavda/tap/weatheroverlay
+```
+
+### Option 2: Build from Source
 
 1. **Clone the repository:**
    ```bash
@@ -60,7 +66,7 @@ A beautiful macOS menu bar weather application that displays real-time weather c
    - Go to System Settings → General → Login Items
    - Click "+" and add WeatherOverlay
 
-### Option 2: Open in Xcode
+### Option 3: Open in Xcode
 
 1. Generate Xcode project:
    ```bash
