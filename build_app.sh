@@ -3,6 +3,7 @@
 
 set -e
 
+VERSION=${1:-"1.0.0"}
 APP_NAME="WeatherOverlay"
 BUILD_DIR=".build/release"
 APP_DIR="${APP_NAME}.app"
@@ -34,7 +35,7 @@ cat <<EOF > "${APP_DIR}/Contents/Info.plist"
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>${VERSION}</string>
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>LSMinimumSystemVersion</key>
@@ -64,7 +65,7 @@ echo "COPY-PASTE HOMEBREW CASK TEMPLATE (place in your homebrew-tap Casks/weathe
 echo "========================================================================="
 cat <<EOF
 cask "weatheroverlay" do
-  version "1.0.0"
+  version "${VERSION}"
   sha256 "${SHA_VAL}"
 
   # Replace <your-github-username> with your actual GitHub username

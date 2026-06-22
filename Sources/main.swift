@@ -150,6 +150,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         refreshItem.target = self
         menu.addItem(refreshItem)
         
+        let updateItem = NSMenuItem(title: "Check for Updates", action: #selector(checkForUpdates), keyEquivalent: "")
+        updateItem.target = self
+        menu.addItem(updateItem)
+        
         let quitItem = NSMenuItem(title: "Quit Weather Overlay", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -381,6 +385,60 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refreshWeather() {
         weatherManager.fetchWeather()
+    }
+
+    @objc private func checkForUpdates() {
+        let url = URL(string: "https://api.github.com/repos/rajanchavda/weather-widget/releases/latest")!
+        let task = URLSession.shared.dataTask(with: url) { data, response, error in
+            guard let data = data, error == nil else {
+                DispatchQueue.main.async {
+                    NSApp.activate(ignoringOtherApps: true)
+                    let alert = NSAlert()
+                    alert.messageText = "Update Check Failed"
+                    alert.informativeText = "Could not check for updates. Please check your network connection."
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+                return
+            }
+            
+            do {
+                if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                   let latestVersionTag = json["tag_name"] as? String,
+                   let htmlUrl = json["html_url"] as? String {
+                    
+                    let latestVersion = latestVersionTag.replacingOccurrences(of: "v", with: "")
+                    let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+                    
+                    DispatchQueue.main.async {
+                        NSApp.activate(ignoringOtherApps: true)
+                        let alert = NSAlert()
+                        
+                        if latestVersion.compare(currentVersion, options: .numeric) == .orderedDescending {
+                            alert.messageText = "Update Available"
+                            alert.informativeText = "A new version (\(latestVersion)) is available. You are running version \(currentVersion).\n\nTo update via Homebrew, run:\nbrew upgrade rajanchavda/tap/weatheroverlay"
+                            alert.alertStyle = .informational
+                            alert.addButton(withTitle: "Download Manual Update")
+                            alert.addButton(withTitle: "Cancel")
+                            
+                            if alert.runModal() == .alertFirstButtonReturn, let url = URL(string: htmlUrl) {
+                                NSWorkspace.shared.open(url)
+                            }
+                        } else {
+                            alert.messageText = "Up to Date"
+                            alert.informativeText = "You are running the latest version (\(currentVersion))."
+                            alert.alertStyle = .informational
+                            alert.addButton(withTitle: "OK")
+                            alert.runModal()
+                        }
+                    }
+                }
+            } catch {
+                print("Failed to parse GitHub response: \(error)")
+            }
+        }
+        task.resume()
     }
 
     @objc private func quitApp() {
