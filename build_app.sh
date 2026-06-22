@@ -17,8 +17,11 @@ rm -rf "$APP_DIR"
 mkdir -p "${APP_DIR}/Contents/MacOS"
 mkdir -p "${APP_DIR}/Contents/Resources"
 
-echo "=== Step 3: Copying Binary ==="
+echo "=== Step 3: Copying Binary & Resources ==="
 cp "${BUILD_DIR}/${APP_NAME}" "${APP_DIR}/Contents/MacOS/"
+if [ -f "AppIcon.icns" ]; then
+    cp "AppIcon.icns" "${APP_DIR}/Contents/Resources/"
+fi
 
 echo "=== Step 4: Generating Info.plist Metadata ==="
 cat <<EOF > "${APP_DIR}/Contents/Info.plist"
@@ -36,6 +39,8 @@ cat <<EOF > "${APP_DIR}/Contents/Info.plist"
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>LSMinimumSystemVersion</key>
