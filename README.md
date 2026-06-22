@@ -12,6 +12,20 @@
 
 A beautiful macOS menu bar weather application that displays real-time weather conditions with atmospheric visual effects, twinkling stars on clear nights, and a temperature forecast graph.
 
+## 📸 Screenshots
+
+**☀️ Sunny**
+![Sunny Weather](Sources/screenshots/sunny.png)
+
+**🌙 Night**
+![Night Weather](Sources/screenshots/night.png)
+
+**❄️ Snowy**
+![Snowy Weather](Sources/screenshots/snowy.png)
+
+**🌫️ Foggy**
+![Foggy Weather](Sources/screenshots/foggy.png)
+
 ## ✨ Features
 
 - **Real-time Weather**: Fetches current weather and 12-hour forecast from Open-Meteo API
