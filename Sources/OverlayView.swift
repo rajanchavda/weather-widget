@@ -457,8 +457,8 @@ struct SunView: View {
             Canvas { context, size in
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 
-                // Position the sun on the right side of the menu bar
-                let sunX = size.width * 0.85
+                // Position the sun near the center, just to the right of a typical camera notch
+                let sunX = (size.width / 2.0) + 140.0
                 let sunY = size.height / 2.0
                 let center = CGPoint(x: sunX, y: sunY)
                 
@@ -490,6 +490,47 @@ struct SunView: View {
                 // Sun Core
                 let coreSize = 14.0
                 context.fill(Path(ellipseIn: CGRect(x: center.x - coreSize/2, y: center.y - coreSize/2, width: coreSize, height: coreSize)), with: .color(.white.opacity(0.95)))
+                
+                // Cinematic Lens Flare Effect
+                let flareShiftX = sin(time * 0.4) * 25.0
+                let flareShiftY = cos(time * 0.3) * 5.0
+                let flareCenter = CGPoint(x: center.x + flareShiftX, y: center.y + flareShiftY)
+                
+                // 1. Long horizontal anamorphic-style flare
+                let hFlareWidth = 150.0 + sin(time) * 10.0
+                let hFlareHeight = 1.5
+                context.fill(Path(ellipseIn: CGRect(x: flareCenter.x - hFlareWidth/2, y: flareCenter.y - hFlareHeight/2, width: hFlareWidth, height: hFlareHeight)), with: .color(Color(red: 0.8, green: 0.9, blue: 1.0).opacity(0.4)))
+                
+                let hFlareWidth2 = 80.0
+                let hFlareHeight2 = 3.0
+                context.fill(Path(ellipseIn: CGRect(x: flareCenter.x - hFlareWidth2/2, y: flareCenter.y - hFlareHeight2/2, width: hFlareWidth2, height: hFlareHeight2)), with: .color(.white.opacity(0.3)))
+                
+                // 2. Diagonal streaks
+                context.drawLayer { ctx in
+                    ctx.translateBy(x: flareCenter.x, y: flareCenter.y)
+                    ctx.rotate(by: .degrees(25))
+                    ctx.fill(Path(ellipseIn: CGRect(x: -40, y: -0.5, width: 80, height: 1.0)), with: .color(.orange.opacity(0.3)))
+                }
+                
+                context.drawLayer { ctx in
+                    ctx.translateBy(x: flareCenter.x, y: flareCenter.y)
+                    ctx.rotate(by: .degrees(-15))
+                    ctx.fill(Path(ellipseIn: CGRect(x: -60, y: -0.5, width: 120, height: 1.0)), with: .color(.yellow.opacity(0.2)))
+                }
+                
+                // 3. Artifact dots (lens ghosting) moving opposite to the flare shift
+                let ghost1X = center.x - flareShiftX * 1.5 - 30.0
+                let ghost1Y = center.y - flareShiftY * 1.5
+                context.fill(Path(ellipseIn: CGRect(x: ghost1X - 4, y: ghost1Y - 4, width: 8, height: 8)), with: .color(Color(red: 0.5, green: 0.8, blue: 1.0).opacity(0.2)))
+                context.stroke(Path(ellipseIn: CGRect(x: ghost1X - 4, y: ghost1Y - 4, width: 8, height: 8)), with: .color(Color(red: 0.5, green: 0.8, blue: 1.0).opacity(0.3)), lineWidth: 0.5)
+
+                let ghost2X = center.x - flareShiftX * 2.2 - 60.0
+                let ghost2Y = center.y - flareShiftY * 2.2
+                context.fill(Path(ellipseIn: CGRect(x: ghost2X - 2.5, y: ghost2Y - 2.5, width: 5, height: 5)), with: .color(.green.opacity(0.15)))
+
+                let ghost3X = center.x - flareShiftX * 0.8 + 20.0
+                let ghost3Y = center.y - flareShiftY * 0.8
+                context.fill(Path(ellipseIn: CGRect(x: ghost3X - 6, y: ghost3Y - 6, width: 12, height: 12)), with: .color(.orange.opacity(0.1)))
                 
                 // Floating light dust/lens flares drifting across
                 let dustCount = 15
