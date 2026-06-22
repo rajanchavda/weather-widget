@@ -77,6 +77,18 @@ brew install rajanchavda/tap/weatheroverlay
 
 3. Build and run (⌘R)
 
+### Uninstallation
+
+If you installed via Homebrew, you can remove the app by running:
+```bash
+brew uninstall weatheroverlay
+```
+
+To completely remove the app along with any leftover preferences and caches:
+```bash
+brew uninstall --zap weatheroverlay
+```
+
 ## 🎮 Usage
 
 The app runs as a menu bar item (no Dock icon). Click the weather icon to access:
