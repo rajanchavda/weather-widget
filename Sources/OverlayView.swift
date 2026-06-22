@@ -267,8 +267,7 @@ struct OverlayView: View {
         if let manualIsNight = settings.manualIsNight {
             return manualIsNight
         }
-        let hour = Calendar.current.component(.hour, from: Date())
-        return hour < 6 || hour > 18
+        return weatherManager.isNight
     }
 
     private func getEffectiveWeatherCode() -> Int {

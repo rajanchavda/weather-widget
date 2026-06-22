@@ -7,6 +7,7 @@ class WeatherManager: ObservableObject {
     @Published var hourlyTemps: [Double] = []
     @Published var hourlyCodes: [Int] = []
     @Published var cityName: String = "Detecting..."
+    @Published var isNight: Bool = false
     @Published var isFetching: Bool = false
     @Published var lastUpdated: Date? = nil
     @Published var hasData: Bool = false
@@ -71,6 +72,7 @@ class WeatherManager: ObservableObject {
                     self.hourlyTemps = Array(weather.hourly.temperature_2m.prefix(12))
                     self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
                     self.cityName = city
+                    self.isNight = weather.current.is_day == 0
                     self.lastUpdated = Date()
                     self.hasData = true
                     self.isFetching = false
@@ -92,6 +94,7 @@ class WeatherManager: ObservableObject {
                         self.weatherCode = weather.current.weather_code
                         self.hourlyTemps = Array(weather.hourly.temperature_2m.prefix(12))
                         self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
+                        self.isNight = weather.current.is_day == 0
                         self.lastUpdated = Date()
                         self.hasData = true
                         self.errorMessage = nil
@@ -148,7 +151,7 @@ class WeatherManager: ObservableObject {
         let latStr = String(format: "%.6f", locale: posixLocale, lat)
         let lonStr = String(format: "%.6f", locale: posixLocale, lon)
         
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(latStr)&longitude=\(lonStr)&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code&forecast_days=1"
+        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(latStr)&longitude=\(lonStr)&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code&forecast_days=1"
         
         guard let url = URL(string: urlString) else {
             throw URLError(.badURL)
@@ -184,6 +187,7 @@ struct WeatherResponse: Codable {
     struct CurrentWeather: Codable {
         let temperature_2m: Double
         let weather_code: Int
+        let is_day: Int
     }
     
     struct HourlyWeather: Codable {

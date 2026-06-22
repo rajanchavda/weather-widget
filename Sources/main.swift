@@ -266,8 +266,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let manualIsNight = settings.manualIsNight {
             return manualIsNight
         }
-        let hour = Calendar.current.component(.hour, from: Date())
-        return hour < 6 || hour > 18
+        return weatherManager.isNight
     }
 
     private func isStyleSelected(_ style: OverlaySettings.AuroraStyle) -> Bool {
