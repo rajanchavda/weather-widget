@@ -7,6 +7,7 @@ class OverlaySettings: ObservableObject {
     @Published var selectedUnit: WeatherUnit = .celsius
     @Published var brightness: Double = 1.0 // 0.0 to 1.0
     @Published var manualWeatherCode: Int? = nil // nil = auto (use real weather)
+    @Published var manualIsNight: Bool? = nil    // nil = auto
 
     enum WeatherUnit: String, CaseIterable {
         case celsius = "°C"
@@ -61,6 +62,19 @@ struct OverlayView: View {
 
                     // Weather particles
                     let code = getEffectiveWeatherCode()
+
+                    // Sun for clear day
+                    if (code == 0 || code == 1) && !checkIsNight() {
+                        SunView(width: geometry.size.width, height: geometry.size.height)
+                            .id("sun-\(code)")
+                    }
+
+                    // Fog animation
+
+                    if code == 45 || code == 48 {
+                        FogView(width: geometry.size.width, height: geometry.size.height)
+                            .id("fog-\(code)")
+                    }
 
                     // Rain animation (light rain)
                     if code >= 51 && code <= 67 {
@@ -232,7 +246,12 @@ struct OverlayView: View {
         case 2, 3: // Cloudy
             return [Color.gray.opacity(0.22), Color(white: 0.7).opacity(0.15), Color.blue.opacity(0.08), Color.clear]
         case 45, 48: // Fog
-            return [Color.white.opacity(0.15), Color.gray.opacity(0.08), Color.clear]
+            return [
+                Color.white.opacity(0.35),
+                Color(white: 0.85).opacity(0.25),
+                Color.white.opacity(0.15),
+                Color.clear
+            ]
         case 51...67, 80...82: // Rain / Drizzle
             return [Color.blue.opacity(0.14), Color.purple.opacity(0.08), Color.clear]
         case 71...77, 85...86: // Snow
@@ -245,6 +264,9 @@ struct OverlayView: View {
     }
 
     private func checkIsNight() -> Bool {
+        if let manualIsNight = settings.manualIsNight {
+            return manualIsNight
+        }
         let hour = Calendar.current.component(.hour, from: Date())
         return hour < 6 || hour > 18
     }
@@ -423,4 +445,112 @@ struct Snowflake: Identifiable {
     let speed: Double
     let delay: Double
     let drift: CGFloat
+}
+
+// MARK: - Sun Animation
+
+struct SunView: View {
+    let width: CGFloat
+    let height: CGFloat
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                
+                // Position the sun on the right side of the menu bar
+                let sunX = size.width * 0.85
+                let sunY = size.height / 2.0
+                let center = CGPoint(x: sunX, y: sunY)
+                
+                // Draw rotating sun rays
+                let rayCount = 12
+                for i in 0..<rayCount {
+                    let angleOffset = (Double.pi * 2.0 / Double(rayCount)) * Double(i)
+                    let rotation = time * 0.15 + angleOffset
+                    
+                    var path = Path()
+                    path.move(to: center)
+                    
+                    let rayLength: CGFloat = 35.0
+                    let angle1 = rotation - 0.05
+                    let angle2 = rotation + 0.05
+                    
+                    path.addLine(to: CGPoint(x: center.x + cos(angle1) * rayLength, y: center.y + sin(angle1) * rayLength))
+                    path.addLine(to: CGPoint(x: center.x + cos(angle2) * rayLength, y: center.y + sin(angle2) * rayLength))
+                    path.closeSubpath()
+                    
+                    context.fill(path, with: .color(.white.opacity(0.12)))
+                }
+                
+                // Sun Halo pulsing
+                let pulse = sin(time * 2.0) * 0.1 + 0.9 // 0.8 to 1.0
+                let haloSize = 28.0 * pulse
+                context.fill(Path(ellipseIn: CGRect(x: center.x - haloSize/2, y: center.y - haloSize/2, width: haloSize, height: haloSize)), with: .color(.yellow.opacity(0.4)))
+                
+                // Sun Core
+                let coreSize = 14.0
+                context.fill(Path(ellipseIn: CGRect(x: center.x - coreSize/2, y: center.y - coreSize/2, width: coreSize, height: coreSize)), with: .color(.white.opacity(0.95)))
+                
+                // Floating light dust/lens flares drifting across
+                let dustCount = 15
+                for i in 0..<dustCount {
+                    let offset = Double(i) * 0.5
+                    let speed = 0.4 + Double(i % 4) * 0.1
+                    let cycle = (time * speed + offset).truncatingRemainder(dividingBy: 15.0)
+                    let progress = cycle / 15.0
+                    
+                    let baseX = (Double(i) * 123.0).truncatingRemainder(dividingBy: Double(size.width))
+                    let x = baseX + progress * 80.0 // slowly drifting right
+                    
+                    let yDrift = sin(time * 0.3 + Double(i)) * 4.0
+                    let y = Double(size.height / 2) + yDrift
+                    
+                    let dustOpacity = sin(progress * .pi) * 0.35 // fades in and out
+                    let dustSize = 1.5 + Double(i % 3)
+                    
+                    let dustColor = i % 2 == 0 ? Color.white : Color.yellow
+                    
+                    context.fill(Path(ellipseIn: CGRect(x: x, y: y, width: dustSize, height: dustSize)), with: .color(dustColor.opacity(dustOpacity)))
+                }
+            }
+        }
+    }
+}
+
+
+// MARK: - Fog Animation
+
+struct FogView: View {
+    let width: CGFloat
+    let height: CGFloat
+
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                
+                let fogLayerCount = 4
+                for i in 0..<fogLayerCount {
+                    let offset = Double(i) * 30.0
+                    let speed = 0.2 + Double(i % 2) * 0.1
+                    let cycle = (time * speed + offset).truncatingRemainder(dividingBy: 100.0)
+                    let progress = cycle / 100.0
+                    
+                    // Oscillating drift
+                    let xDrift = sin(progress * .pi * 2) * 40.0
+                    let xPos = Double(size.width / 2) - 300.0 + xDrift
+                    let yPos = Double(size.height / 2) - 10.0 + Double(i) * 5.0
+                    
+                    let fogWidth = 600.0 // Very wide
+                    let fogHeight = 40.0
+                    
+                    let rect = CGRect(x: xPos, y: yPos, width: fogWidth, height: fogHeight)
+                    
+                    context.fill(Path(ellipseIn: rect), with: .color(Color.white.opacity(0.25)))
+                }
+            }
+            .blur(radius: 8.0) // Soften the fog heavily
+        }
+    }
 }

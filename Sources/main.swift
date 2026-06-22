@@ -126,9 +126,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let item = NSMenuItem(title: style.rawValue, action: #selector(setAuroraStyle(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = style
-            let isCurrentStyle = (style.weatherCode == settings.manualWeatherCode) ||
-                                 (style == .auto && settings.manualWeatherCode == nil)
-            item.state = isCurrentStyle ? .on : .off
+            item.state = isStyleSelected(style) ? .on : .off
             auroraStyleMenu.addItem(item)
         }
 
@@ -265,8 +263,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkIsNight() -> Bool {
+        if let manualIsNight = settings.manualIsNight {
+            return manualIsNight
+        }
         let hour = Calendar.current.component(.hour, from: Date())
         return hour < 6 || hour > 18
+    }
+
+    private func isStyleSelected(_ style: OverlaySettings.AuroraStyle) -> Bool {
+        if style == .auto {
+            return settings.manualWeatherCode == nil
+        } else if style == .clearDay {
+            return settings.manualWeatherCode == 0 && settings.manualIsNight == false
+        } else if style == .clearNight {
+            return settings.manualWeatherCode == 0 && settings.manualIsNight == true
+        } else {
+            return style.weatherCode == settings.manualWeatherCode
+        }
     }
     
     // MARK: - Menu Selectors
@@ -316,13 +329,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func setAuroraStyle(_ sender: NSMenuItem) {
         if let style = sender.representedObject as? OverlaySettings.AuroraStyle {
             settings.manualWeatherCode = style.weatherCode
+            
+            if style == .clearDay {
+                settings.manualIsNight = false
+            } else if style == .clearNight {
+                settings.manualIsNight = true
+            } else if style == .auto {
+                settings.manualIsNight = nil
+            }
 
             if let submenu = sender.menu {
                 for item in submenu.items {
                     if let itemStyle = item.representedObject as? OverlaySettings.AuroraStyle {
-                        let isCurrentStyle = (itemStyle.weatherCode == settings.manualWeatherCode) ||
-                                             (itemStyle == .auto && settings.manualWeatherCode == nil)
-                        item.state = isCurrentStyle ? .on : .off
+                        item.state = isStyleSelected(itemStyle) ? .on : .off
                     }
                 }
             }
@@ -335,6 +354,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         settings.selectedUnit = .celsius
         settings.brightness = 1.0
         settings.manualWeatherCode = nil
+        settings.manualIsNight = nil
 
         // Update all menu checkboxes
         if let menu = statusItem?.menu {
@@ -373,7 +393,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if let submenu = item.submenu {
                     for styleItem in submenu.items {
                         if let style = styleItem.representedObject as? OverlaySettings.AuroraStyle {
-                            styleItem.state = (style == .auto && settings.manualWeatherCode == nil) ? .on : .off
+                            styleItem.state = isStyleSelected(style) ? .on : .off
                         }
                     }
                 }
