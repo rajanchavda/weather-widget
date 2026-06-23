@@ -1,6 +1,7 @@
 import Cocoa
 import SwiftUI
 import Combine
+import ServiceManagement
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -17,6 +18,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppDelegate.shared = self
     }
     
+    deinit {
+        DistributedNotificationCenter.default().removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        NotificationCenter.default.removeObserver(self)
+    }
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("[AppDelegate] applicationDidFinishLaunching started.")
         // Run as an accessory app (background agent) so there's no Dock icon or main menu
@@ -31,6 +38,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self,
             selector: #selector(screenParametersChanged),
             name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+        
+        // Listen for screen unlock events
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(screenDidUnlock),
+            name: NSNotification.Name("com.apple.screenIsUnlocked"),
+            object: nil
+        )
+        
+        // Listen for system wake from sleep events
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemDidWake),
+            name: NSWorkspace.didWakeNotification,
             object: nil
         )
         
@@ -134,6 +157,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         auroraStyleItem.submenu = auroraStyleMenu
         menu.addItem(auroraStyleItem)
 
+        // Launch at Login Toggle
+        let launchToggle = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        launchToggle.target = self
+        launchToggle.state = isLaunchAtLoginEnabled() ? .on : .off
+        menu.addItem(launchToggle)
+
         menu.addItem(NSMenuItem.separator())
 
         // Reset to Defaults
@@ -192,6 +221,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self, let window = self.overlayWindow else { return }
             let frame = self.getMenuBarFrame()
             window.setFrame(frame, display: true)
+        }
+    }
+    
+    @objc private func screenDidUnlock() {
+        print("[AppDelegate] Screen unlocked notification received. Refreshing weather...")
+        weatherManager.fetchWeather()
+    }
+    
+    @objc private func systemDidWake() {
+        print("[AppDelegate] System did wake notification received. Refreshing weather...")
+        weatherManager.fetchWeather()
+    }
+    
+    private func isLaunchAtLoginEnabled() -> Bool {
+        return SMAppService.mainApp.status == .enabled
+    }
+    
+    @objc private func toggleLaunchAtLogin() {
+        let service = SMAppService.mainApp
+        if service.status == .enabled {
+            do {
+                try service.unregister()
+                print("[AppDelegate] Unregistered login item successfully.")
+            } catch {
+                print("[AppDelegate] Failed to unregister login item: \(error)")
+            }
+        } else {
+            do {
+                try service.register()
+                print("[AppDelegate] Registered login item successfully.")
+            } catch {
+                print("[AppDelegate] Failed to register login item: \(error)")
+                showLoginItemErrorAlert(error)
+            }
+        }
+        
+        // Update menu item checkmark
+        if let menu = statusItem?.menu,
+           let item = menu.items.first(where: { $0.action == #selector(toggleLaunchAtLogin) }) {
+            item.state = isLaunchAtLoginEnabled() ? .on : .off
+        }
+    }
+    
+    private func showLoginItemErrorAlert(_ error: Error) {
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Launch at Login Error"
+            alert.informativeText = "Could not register launch at login: \(error.localizedDescription)\n\nPlease make sure the app is in your Applications folder and you have allowed it in System Settings > General > Login Items."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
     }
     
@@ -360,6 +441,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Aurora toggle
             if let auroraItem = menu.items.first(where: { $0.action == #selector(toggleAurora) }) {
                 auroraItem.state = settings.showAurora ? .on : .off
+            }
+
+            // Launch at login toggle
+            if let launchItem = menu.items.first(where: { $0.action == #selector(toggleLaunchAtLogin) }) {
+                launchItem.state = isLaunchAtLoginEnabled() ? .on : .off
             }
 
             // Bottom line toggle
