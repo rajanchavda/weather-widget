@@ -615,13 +615,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         
                         if latestVersion.compare(currentVersion, options: .numeric) == .orderedDescending {
                             alert.messageText = "Update Available"
-                            alert.informativeText = "A new version (\(latestVersion)) is available. You are running version \(currentVersion).\n\nTo update via Homebrew, run:\nbrew upgrade rajanchavda/tap/weatheroverlay"
+                            alert.informativeText = "A new version (\(latestVersion)) is available. You are running version \(currentVersion).\n\nWould you like to automatically update and restart the app?"
                             alert.alertStyle = .informational
-                            alert.addButton(withTitle: "Download Manual Update")
+                            alert.addButton(withTitle: "Update & Restart")
                             alert.addButton(withTitle: "Cancel")
                             
-                            if alert.runModal() == .alertFirstButtonReturn, let url = URL(string: htmlUrl) {
-                                NSWorkspace.shared.open(url)
+                            if alert.runModal() == .alertFirstButtonReturn {
+                                self.performUpdateAndRestart()
                             }
                         } else {
                             alert.messageText = "Up to Date"
@@ -637,6 +637,84 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         task.resume()
+    }
+
+    private func performUpdateAndRestart() {
+        guard let button = statusItem?.button else { return }
+        
+        button.title = "🌤️ Updating..."
+        if let menu = statusItem?.menu, menu.items.count > 1 {
+            menu.items[1].title = "Status: Downloading update via Homebrew..."
+        }
+        
+        Task.detached {
+            let task = Process()
+            let pipe = Pipe()
+            task.standardOutput = pipe
+            task.standardError = pipe
+            
+            let brewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
+            var brewURL: URL?
+            for path in brewPaths {
+                if FileManager.default.isExecutableFile(atPath: path) {
+                    brewURL = URL(fileURLWithPath: path)
+                    break
+                }
+            }
+            
+            if let brewURL = brewURL {
+                task.executableURL = brewURL
+                task.arguments = ["upgrade", "rajanchavda/tap/weatheroverlay"]
+            } else {
+                task.executableURL = URL(fileURLWithPath: "/bin/sh")
+                task.arguments = ["-c", "brew upgrade rajanchavda/tap/weatheroverlay"]
+            }
+            
+            do {
+                try task.run()
+                task.waitUntilExit()
+                
+                if task.terminationStatus == 0 {
+                    // Update successful. Relaunch using a detached script
+                    let relaunchTask = Process()
+                    relaunchTask.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
+                    // Wait for the app to quit, then open it again
+                    let relaunchScript = "while pgrep 'WeatherOverlay' > /dev/null; do sleep 0.1; done; open -a 'WeatherOverlay'"
+                    relaunchTask.arguments = ["/bin/sh", "-c", relaunchScript]
+                    try relaunchTask.run()
+                    
+                    RunLoop.main.perform {
+                        NSApplication.shared.terminate(nil)
+                    }
+                } else {
+                    let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let errorString = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+                    
+                    RunLoop.main.perform {
+                        let alert = NSAlert()
+                        alert.messageText = "Update Failed"
+                        alert.informativeText = "Could not update via Homebrew. Please run 'brew upgrade rajanchavda/tap/weatheroverlay' manually in Terminal.\n\nError:\n\(errorString.prefix(200))"
+                        alert.alertStyle = .warning
+                        alert.addButton(withTitle: "OK")
+                        alert.runModal()
+                        
+                        // Restore normal state
+                        self.weatherManager.fetchWeather()
+                    }
+                }
+            } catch {
+                RunLoop.main.perform {
+                    let alert = NSAlert()
+                    alert.messageText = "Update Failed"
+                    alert.informativeText = "Failed to launch update process: \(error.localizedDescription)"
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                    
+                    self.weatherManager.fetchWeather()
+                }
+            }
+        }
     }
 
     @objc private func quitApp() {
