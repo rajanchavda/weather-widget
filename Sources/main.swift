@@ -94,7 +94,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let locationItem = NSMenuItem(title: "Location: Detecting...", action: nil, keyEquivalent: "")
         locationItem.isEnabled = false
         menu.addItem(locationItem)
-        
+
+        let setLocationItem = NSMenuItem(title: "Set Location...", action: #selector(promptSetLocation), keyEquivalent: "")
+        setLocationItem.target = self
+        menu.addItem(setLocationItem)
+
+        let autoLocationItem = NSMenuItem(title: "Use Auto Location (IP-based)", action: #selector(clearManualLocation), keyEquivalent: "")
+        autoLocationItem.target = self
+        menu.addItem(autoLocationItem)
+
         menu.addItem(NSMenuItem.separator())
         
         // Configuration: Aurora Toggle
@@ -217,7 +225,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc private func screenParametersChanged() {
-        DispatchQueue.main.async { [weak self] in
+        RunLoop.main.perform { [weak self] in
             guard let self = self, let window = self.overlayWindow else { return }
             let frame = self.getMenuBarFrame()
             window.setFrame(frame, display: true)
@@ -265,7 +273,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func showLoginItemErrorAlert(_ error: Error) {
-        DispatchQueue.main.async {
+        RunLoop.main.perform {
             NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.messageText = "Launch at Login Error"
@@ -492,11 +500,85 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         weatherManager.fetchWeather()
     }
 
+    @objc private func promptSetLocation() {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.messageText = "Set Location"
+        alert.informativeText = "Enter a city name (e.g. \"Mumbai\", \"London\", \"New York\")."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Search")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        input.placeholderString = "City name"
+        if let current = weatherManager.manualLocation {
+            input.stringValue = current.name
+        }
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let query = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+
+        print("[AppDelegate] Set Location requested for query: \(query)")
+        let manager = weatherManager
+        Task.detached {
+            do {
+                print("[AppDelegate] About to call searchCity...")
+                let match = try await manager.searchCity(query)
+                print("[AppDelegate] searchCity returned, dispatching to main...")
+                RunLoop.main.perform {
+                    print("[AppDelegate] On main thread, processing result...")
+                    guard let self = AppDelegate.shared else {
+                        print("[AppDelegate] AppDelegate.shared is nil!")
+                        return
+                    }
+                    if let match = match {
+                        print("[AppDelegate] Geocoding match: \(match.name) (\(match.latitude), \(match.longitude))")
+                        manager.manualLocation = match
+                        if let menu = self.statusItem?.menu, menu.items.count > 1 {
+                            menu.items[1].title = "Location: \(match.name) (loading...)"
+                        }
+                        print("[AppDelegate] Calling fetchWeather() for new location...")
+                        manager.fetchWeather()
+                    } else {
+                        print("[AppDelegate] No geocoding match for: \(query)")
+                        self.showLocationAlert("No match", "No city found matching \"\(query)\". Try a different spelling.")
+                    }
+                }
+            } catch {
+                print("[AppDelegate] Geocoding failed: \(error.localizedDescription)")
+                RunLoop.main.perform {
+                    AppDelegate.shared?.showLocationAlert("Search failed", error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    @objc private func clearManualLocation() {
+        weatherManager.manualLocation = nil
+        weatherManager.fetchWeather()
+    }
+
+    private func showLocationAlert(_ title: String, _ message: String) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     @objc private func checkForUpdates() {
         let url = URL(string: "https://api.github.com/repos/rajanchavda/weather-widget/releases/latest")!
         let task = URLSession.shared.dataTask(with: url) { data, response, error in
             guard let data = data, error == nil else {
-                DispatchQueue.main.async {
+                RunLoop.main.perform {
                     NSApp.activate(ignoringOtherApps: true)
                     let alert = NSAlert()
                     alert.messageText = "Update Check Failed"
@@ -516,7 +598,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let latestVersion = latestVersionTag.replacingOccurrences(of: "v", with: "")
                     let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
                     
-                    DispatchQueue.main.async {
+                    RunLoop.main.perform {
                         NSApp.activate(ignoringOtherApps: true)
                         let alert = NSAlert()
                         

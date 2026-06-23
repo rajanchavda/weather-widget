@@ -29,7 +29,8 @@ A beautiful macOS menu bar weather application that displays real-time weather c
 ## ✨ Features
 
 - **Real-time Weather**: Fetches current weather and 12-hour forecast from Open-Meteo API
-- **IP-based Location**: Automatic location detection using IP geolocation
+- **Automatic Location**: IP-based geolocation by default — no permission prompt, no setup
+- **Manual Location Override**: Pin the app to any city worldwide via "Set Location..." in the menu
 - **Atmospheric Aurora**: Weather-responsive gradient overlays on the menu bar
 - **Realistic Animated Weather Effects**:
   - 🌧️ **Rain** - Cinematic 3-layer depth raindrops with wind drift, blue water tint, and ripple splashes
@@ -107,6 +108,8 @@ brew uninstall --zap weatheroverlay
 
 The app runs as a menu bar item (no Dock icon). Click the weather icon to access:
 
+- **Set Location...** - Pin the app to a specific city (e.g. "Mumbai", "London", "New York"). Once set, this overrides IP-based detection and **persists across launches** — it stays locked to the chosen city until you change it.
+- **Use Auto Location (IP-based)** - Clear any manual override and return to automatic IP-based detection.
 - **Atmospheric Aurora** ✓ - Toggle weather-responsive visual effects (enabled by default)
 - **Bottom Forecast Line** ☐ - Show/hide 12-hour temperature graph (disabled by default)
 - **Temperature Unit** - Choose Celsius (°C) or Fahrenheit (°F)
@@ -123,6 +126,31 @@ The app runs as a menu bar item (no Dock icon). Click the weather icon to access
 - **Reset to Defaults** - Restore all settings to original state
 - **Force Refresh Weather** (⌘R) - Manual weather update
 - **Quit Weather Overlay** (⌘Q)
+
+## 📍 Location & Refresh Behavior
+
+The app offers two location modes — **Auto (IP-based)** and **Manual (city override)**. No location permission prompt is ever shown.
+
+### Auto (default)
+- City is detected from your public IP via FreeIPAPI (with ipapi.co as a fallback).
+- The IP is **re-resolved every 5 minutes** as part of the auto-refresh cycle. If you're roaming or behind a different VPN, the city updates automatically.
+- Accuracy: typically city-level (good enough for general weather glances).
+
+### Manual override
+- Open the menu and click **Set Location...** to type a city name. The first match from Open-Meteo's free geocoding API is saved.
+- Once set, the city is **locked** and never changes on its own. Every refresh — auto, screen unlock, system wake, or ⌘R — uses the same coordinates.
+- The override **persists across app launches** (stored in `UserDefaults`).
+- To clear it, click **Use Auto Location (IP-based)** in the menu.
+- *Note:* "Reset to Defaults" does NOT clear a manual location.
+
+### Refresh cadence
+- **Auto-refresh**: every **5 minutes** (300 seconds)
+- **Force refresh**: ⌘R from the menu
+- **System events**: refresh fires automatically on screen unlock and system wake
+- **Network timeout**: 5 seconds per request (failures fall through gracefully — see error handling below)
+
+### Why no GPS / device location?
+The app intentionally uses IP-based geolocation rather than CoreLocation/GPS so it can be distributed without code-signing complications, permission prompts, or first-launch friction. For users who want precision, the manual city override gives pin-point accuracy with zero permission UX.
 
 ## 🌈 Aurora Visual Modes & Animations
 
@@ -240,10 +268,11 @@ This gives you a quick visual glance at whether temperatures are rising, falling
 - **Platform**: macOS 13.0+ (Ventura)
 - **Language**: Swift 5.9+
 - **Frameworks**: SwiftUI, Cocoa, Combine, Foundation
-- **APIs**: 
-  - Open-Meteo (weather data, no API key)
-  - FreeIPAPI (geolocation, primary)
-  - ipapi.co (geolocation, fallback)
+- **APIs**:
+  - Open-Meteo Forecast (weather data, no API key)
+  - Open-Meteo Geocoding (city → coordinates for manual location, no API key)
+  - FreeIPAPI (IP geolocation, primary)
+  - ipapi.co (IP geolocation, fallback)
 - **Dependencies**: None (pure Swift)
 
 ## Documentation
