@@ -7,7 +7,7 @@ import ServiceManagement
 class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
     
-    var overlayWindow: NSWindow?
+    var overlayWindows: [NSWindow] = []
     var statusItem: NSStatusItem?
     let weatherManager = WeatherManager()
     let settings = OverlaySettings()
@@ -29,9 +29,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Run as an accessory app (background agent) so there's no Dock icon or main menu
         NSApp.setActivationPolicy(.accessory)
         
-        print("[AppDelegate] Setting up status item and overlay window...")
+        print("[AppDelegate] Setting up status item and overlay windows...")
         setupStatusItem()
-        setupOverlayWindow()
+        setupOverlayWindows()
         
         // Listen for system resolution changes or screen configuration updates
         NotificationCenter.default.addObserver(
@@ -196,50 +196,65 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.menu = menu
     }
     
-    private func setupOverlayWindow() {
-        let frame = getMenuBarFrame()
+    private func setupOverlayWindows() {
+        // Remove existing windows if any
+        for window in overlayWindows {
+            window.close()
+        }
+        overlayWindows.removeAll()
         
-        let window = NSWindow(
-            contentRect: frame,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = false
-        
-        // Core visual properties: float in status bar + make clicks pass through
-        window.level = .statusBar
-        window.ignoresMouseEvents = true
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        
-        // Embed the SwiftUI view hierarchy inside the AppKit window
-        let hostingView = NSHostingView(rootView: OverlayView(weatherManager: weatherManager, settings: settings))
-        window.contentView = hostingView
-        
-        // Display the window
-        window.makeKeyAndOrderFront(nil)
-        self.overlayWindow = window
+        for screen in NSScreen.screens {
+            let frame = getMenuBarFrame(for: screen)
+            
+            let window = NSWindow(
+                contentRect: frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            
+            window.backgroundColor = .clear
+            window.isOpaque = false
+            window.hasShadow = false
+            
+            // Core visual properties: float in status bar + make clicks pass through
+            window.level = .statusBar
+            window.ignoresMouseEvents = true
+            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            
+            // Embed the SwiftUI view hierarchy inside the AppKit window
+            let hostingView = NSHostingView(rootView: OverlayView(weatherManager: weatherManager, settings: settings))
+            window.contentView = hostingView
+            
+            // Display the window
+            window.makeKeyAndOrderFront(nil)
+            overlayWindows.append(window)
+        }
     }
     
+    @objc private func delayedSetupOverlayWindows() {
+        setupOverlayWindows()
+    }
+    
+    private func triggerWindowRecreation() {
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(delayedSetupOverlayWindows), object: nil)
+        self.perform(#selector(delayedSetupOverlayWindows), with: nil, afterDelay: 1.5)
+    }
+
     @objc private func screenParametersChanged() {
-        RunLoop.main.perform { [weak self] in
-            guard let self = self, let window = self.overlayWindow else { return }
-            let frame = self.getMenuBarFrame()
-            window.setFrame(frame, display: true)
-        }
+        triggerWindowRecreation()
     }
     
     @objc private func screenDidUnlock() {
         print("[AppDelegate] Screen unlocked notification received. Refreshing weather...")
         weatherManager.fetchWeather()
+        triggerWindowRecreation()
     }
     
     @objc private func systemDidWake() {
         print("[AppDelegate] System did wake notification received. Refreshing weather...")
         weatherManager.fetchWeather()
+        triggerWindowRecreation()
     }
     
     private func isLaunchAtLoginEnabled() -> Bool {
@@ -284,13 +299,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
-    private func getMenuBarFrame() -> NSRect {
-        guard let mainScreen = NSScreen.main else {
-            return NSRect(x: 0, y: 0, width: 1920, height: 24)
-        }
-        
-        let screenFrame = mainScreen.frame
-        let visibleFrame = mainScreen.visibleFrame
+    private func getMenuBarFrame(for screen: NSScreen) -> NSRect {
+        let screenFrame = screen.frame
+        let visibleFrame = screen.visibleFrame
         
         // Menu bar height calculation: Difference between full screen height and top bounds of visible content area
         let menuBarHeight = screenFrame.height - visibleFrame.maxY
