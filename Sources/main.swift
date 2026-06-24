@@ -231,7 +231,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Core visual properties: float in status bar + make clicks pass through
             window.level = .statusBar
             window.ignoresMouseEvents = true
-            window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            window.collectionBehavior = [.canJoinAllSpaces]
             
             // Embed the SwiftUI view hierarchy inside the AppKit window
             let hostingView = NSHostingView(rootView: OverlayView(weatherManager: weatherManager, settings: settings))
