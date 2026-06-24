@@ -394,11 +394,13 @@ struct RainView: View {
                     let seed = (i &* 12345) &+ (iteration &* 67890)
                     let randomFactor = Double((seed ^ (seed >> 16)) & 0xFFFF) / 65535.0
                     let baseX = randomFactor * Double(size.width)
-                    let windDrift = sin(time * 0.3 + Double(i)) * 3.0
-                    let x = baseX + windDrift
-
                     // Vertical position
                     let y = progress * (Double(size.height) + 15) - 10
+
+                    // Slant ratio for wind-blown look (thunderstorm rain falls at an angle)
+                    let slantRatio = intensity.isThunderstorm ? -0.35 : 0.0
+                    let windDrift = sin(time * 0.3 + Double(i)) * 3.0
+                    let x = baseX + windDrift + (y * slantRatio)
 
                     // Drop properties based on depth
                     let dropWidth = 1.0 * depthFactor // Thinner drops
@@ -408,18 +410,23 @@ struct RainView: View {
                     // Draw raindrop streak (blue-tinted water)
                     if progress < 0.9 {
                         var dropPath = Path()
-                        dropPath.addRoundedRect(
-                            in: CGRect(x: x - dropWidth/2, y: y, width: dropWidth, height: dropHeight),
-                            cornerSize: CGSize(width: dropWidth/2, height: dropWidth/2)
-                        )
+                        let slantX = dropHeight * slantRatio
+                        dropPath.move(to: CGPoint(x: x, y: y))
+                        dropPath.addLine(to: CGPoint(x: x + slantX, y: y + dropHeight))
+                        
                         let rainColor = Color(red: 0.6, green: 0.75, blue: 0.95)
-                        context.fill(dropPath, with: .color(rainColor.opacity(dropOpacity)))
+                        context.stroke(
+                            dropPath,
+                            with: .color(rainColor.opacity(dropOpacity)),
+                            style: StrokeStyle(lineWidth: dropWidth, lineCap: .round)
+                        )
                     }
 
                     // Splash with ripples (blue-tinted water)
                     if progress > 0.85 && progress < 1.0 {
                         let splashProgress = (progress - 0.85) / 0.15
                         let splashY = Double(size.height) - 3
+                        let splashX = baseX + windDrift + (splashY * slantRatio)
 
                         let splashColor = Color(red: 0.65, green: 0.8, blue: 1.0)
 
@@ -427,7 +434,7 @@ struct RainView: View {
                         let splash1Size = 3.0 + splashProgress * 5.0
                         let splash1Opacity = (1.0 - splashProgress) * dropOpacity * 0.6
                         context.fill(
-                            Path(ellipseIn: CGRect(x: x - splash1Size/2, y: splashY - splash1Size/2, width: splash1Size, height: splash1Size)),
+                            Path(ellipseIn: CGRect(x: splashX - splash1Size/2, y: splashY - splash1Size/2, width: splash1Size, height: splash1Size)),
                             with: .color(splashColor.opacity(splash1Opacity))
                         )
 
@@ -436,7 +443,7 @@ struct RainView: View {
                             let rippleSize = 5.0 + (splashProgress - 0.3) * 6.0
                             let rippleOpacity = (1.0 - splashProgress) * 0.3
                             context.stroke(
-                                Path(ellipseIn: CGRect(x: x - rippleSize/2, y: splashY - rippleSize/2, width: rippleSize, height: rippleSize)),
+                                Path(ellipseIn: CGRect(x: splashX - rippleSize/2, y: splashY - rippleSize/2, width: rippleSize, height: rippleSize)),
                                 with: .color(splashColor.opacity(rippleOpacity)),
                                 lineWidth: 0.8
                             )
