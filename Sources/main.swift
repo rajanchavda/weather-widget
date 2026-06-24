@@ -29,6 +29,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Run as an accessory app (background agent) so there's no Dock icon or main menu
         NSApp.setActivationPolicy(.accessory)
         
+        // Prevent macOS from automatically terminating the app while in background
+        ProcessInfo.processInfo.disableAutomaticTermination("WeatherOverlayBackground")
+        
         print("[AppDelegate] Setting up status item and overlay windows...")
         setupStatusItem()
         setupOverlayWindows()
@@ -54,6 +57,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self,
             selector: #selector(systemDidWake),
             name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+        
+        // Listen for system sleep events to prevent GPU crashes
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemWillSleep),
+            name: NSWorkspace.willSleepNotification,
             object: nil
         )
         
@@ -255,6 +266,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("[AppDelegate] System did wake notification received. Refreshing weather...")
         weatherManager.fetchWeather()
         triggerWindowRecreation()
+    }
+    
+    @objc private func systemWillSleep() {
+        print("[AppDelegate] System will sleep. Closing windows to prevent Metal GPU crashes...")
+        NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(delayedSetupOverlayWindows), object: nil)
+        for window in overlayWindows {
+            window.close()
+        }
+        overlayWindows.removeAll()
     }
     
     private func isLaunchAtLoginEnabled() -> Bool {
