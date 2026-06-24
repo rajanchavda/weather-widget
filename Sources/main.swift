@@ -229,7 +229,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             window.hasShadow = false
             
             // Core visual properties: float in status bar + make clicks pass through
-            window.level = .statusBar
+            window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue - 1)
             window.ignoresMouseEvents = true
             window.collectionBehavior = [.canJoinAllSpaces]
             

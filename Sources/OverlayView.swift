@@ -76,9 +76,8 @@ struct OverlayView: View {
                     }
 
                     // Fog animation
-
                     if code == 45 || code == 48 {
-                        FogView(width: geometry.size.width, height: geometry.size.height)
+                        FogView(width: geometry.size.width, height: geometry.size.height, isNight: checkIsNight())
                             .id("fog-\(code)")
                     }
 
@@ -208,12 +207,21 @@ struct OverlayView: View {
         case 2, 3: // Cloudy
             return [Color.gray.opacity(0.22), Color(white: 0.7).opacity(0.15), Color.blue.opacity(0.08), Color.clear]
         case 45, 48: // Fog
-            return [
-                Color.white.opacity(0.35),
-                Color(white: 0.85).opacity(0.25),
-                Color.white.opacity(0.15),
-                Color.clear
-            ]
+            if isNight {
+                return [
+                    Color(red: 0.10, green: 0.13, blue: 0.25).opacity(0.65), // Richer indigo-grey
+                    Color(red: 0.18, green: 0.22, blue: 0.32).opacity(0.50),
+                    Color(red: 0.28, green: 0.35, blue: 0.48).opacity(0.35), // Visible moonlit slate
+                    Color.clear
+                ]
+            } else {
+                return [
+                    Color(red: 0.85, green: 0.83, blue: 0.80).opacity(0.70), // Richer warm grey
+                    Color(red: 0.95, green: 0.90, blue: 0.82).opacity(0.55), // Stronger gold highlight
+                    Color(red: 0.90, green: 0.90, blue: 0.92).opacity(0.40), // Misty white
+                    Color.clear
+                ]
+            }
         case 51...67, 80...82: // Rain / Drizzle
             return [Color.blue.opacity(0.14), Color.purple.opacity(0.08), Color.clear]
         case 71...77, 85...86: // Snow
@@ -677,33 +685,69 @@ struct CloudView: View {
 struct FogView: View {
     let width: CGFloat
     let height: CGFloat
+    let isNight: Bool
 
     var body: some View {
         TimelineView(.animation) { timeline in
             Canvas { context, size in
                 let time = timeline.date.timeIntervalSinceReferenceDate
                 
-                let fogLayerCount = 4
-                for i in 0..<fogLayerCount {
-                    let offset = Double(i) * 30.0
-                    let speed = 0.2 + Double(i % 2) * 0.1
-                    let cycle = (time * speed + offset).truncatingRemainder(dividingBy: 100.0)
-                    let progress = cycle / 100.0
+                let fogColor = isNight ? Color(red: 0.82, green: 0.88, blue: 0.96) : Color(red: 0.98, green: 0.98, blue: 0.96)
+                let wispCount = 8
+                
+                for i in 0..<wispCount {
+                    // Determine depth layer: 0 = Far, 1 = Mid, 2 = Near
+                    let layer = i % 3
                     
-                    // Oscillating drift
-                    let xDrift = sin(progress * .pi * 2) * 40.0
-                    let xPos = Double(size.width / 2) - 300.0 + xDrift
-                    let yPos = Double(size.height / 2) - 10.0 + Double(i) * 5.0
+                    let speedFactor: Double
+                    let opacityFactor: Double
+                    let heightFactor: Double
+                    let yOffset: Double
                     
-                    let fogWidth = 600.0 // Very wide
-                    let fogHeight = 40.0
+                    switch layer {
+                    case 0: // Far
+                        speedFactor = 5.0
+                        opacityFactor = 0.38
+                        heightFactor = 0.9
+                        yOffset = -2.0
+                    case 1: // Mid
+                        speedFactor = 10.0
+                        opacityFactor = 0.55
+                        heightFactor = 1.2
+                        yOffset = 0.0
+                    default: // Near (2)
+                        speedFactor = 15.0
+                        opacityFactor = 0.70
+                        heightFactor = 1.5
+                        yOffset = 2.0
+                    }
                     
-                    let rect = CGRect(x: xPos, y: yPos, width: fogWidth, height: fogHeight)
+                    // Add individual wisp variation
+                    let individualSpeed = speedFactor + Double((i * 3) % 5)
+                    let wispWidth = (250.0 + Double((i * 17) % 4) * 40.0) * heightFactor
+                    let wispHeight = (16.0 + Double((i * 11) % 3) * 4.0) * heightFactor
                     
-                    context.fill(Path(ellipseIn: rect), with: .color(Color.white.opacity(0.25)))
+                    let totalSpan = Double(size.width) + wispWidth
+                    // Left-to-right drift with time, wrapping seamlessly
+                    let startX = Double(i) * (Double(size.width) / Double(wispCount))
+                    let rawX = startX + time * individualSpeed
+                    let x = rawX.truncatingRemainder(dividingBy: totalSpan) - wispWidth
+                    
+                    // Slow rolling vertical oscillation
+                    let rollSpeed = 0.3 + Double(i % 3) * 0.15
+                    let rollAmplitude = 2.5 * heightFactor
+                    let yOscillation = sin(time * rollSpeed + Double(i)) * rollAmplitude
+                    let y = Double(size.height / 2.0) - (wispHeight / 2.0) + yOffset + yOscillation
+                    
+                    // Gentle breathing/pulsing opacity to simulate changing mist density
+                    let pulse = 0.85 + sin(time * 0.4 + Double(i)) * 0.15
+                    let currentOpacity = opacityFactor * pulse
+                    
+                    let rect = CGRect(x: x, y: y, width: wispWidth, height: wispHeight)
+                    context.fill(Path(ellipseIn: rect), with: .color(fogColor.opacity(currentOpacity)))
                 }
             }
-            .blur(radius: 8.0) // Soften the fog heavily
+            .blur(radius: 6.0) // Soften the fog heavily but preserve visibility
         }
     }
 }
