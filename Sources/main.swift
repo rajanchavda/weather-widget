@@ -106,7 +106,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         locationItem.isEnabled = false
         menu.addItem(locationItem)
 
-        let setLocationItem = NSMenuItem(title: "Set Location...", action: #selector(promptSetLocation), keyEquivalent: "")
+        let setLocationItem = NSMenuItem(title: "Set Location Manually...", action: #selector(promptSetLocation), keyEquivalent: "")
         setLocationItem.target = self
         menu.addItem(setLocationItem)
 
