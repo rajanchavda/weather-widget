@@ -340,11 +340,14 @@ struct RainView: View {
 
                     // Speed varies by depth (closer = faster)
                     let speed = intensity.baseSpeed / depthFactor
-                    let cycle = (time + offset).truncatingRemainder(dividingBy: speed)
-                    let progress = cycle / speed
+                    let cycleValue = (time + offset) / speed
+                    let iteration = Int(floor(cycleValue))
+                    let progress = cycleValue - Double(iteration)
 
-                    // Horizontal position with slight wind drift
-                    let baseX = (Double(i) * 73.0).truncatingRemainder(dividingBy: Double(size.width))
+                    // Horizontal position with slight wind drift (randomized per iteration)
+                    let seed = (i &* 12345) &+ (iteration &* 67890)
+                    let randomFactor = Double((seed ^ (seed >> 16)) & 0xFFFF) / 65535.0
+                    let baseX = randomFactor * Double(size.width)
                     let windDrift = sin(time * 0.3 + Double(i)) * 3.0
                     let x = baseX + windDrift
 
@@ -422,11 +425,15 @@ struct SnowView: View {
                 for i in 0..<flakeCount {
                     let offset = Double(i) * 0.2
                     let speed = 3.0 + Double((i * 17) % 15) / 10.0 // 3.0-4.5s
-                    let cycle = (time + offset).truncatingRemainder(dividingBy: speed)
-                    let progress = cycle / speed
+                    let cycleValue = (time + offset) / speed
+                    let iteration = Int(floor(cycleValue))
+                    let progress = cycleValue - Double(iteration)
 
-                    // Calculate positions
-                    let baseX = Double((i * 73) % Int(width))
+                    // Calculate positions (randomized per iteration)
+                    let seed = (i &* 12345) &+ (iteration &* 67890)
+                    let randomFactor = Double((seed ^ (seed >> 16)) & 0xFFFF) / 65535.0
+                    let baseX = randomFactor * Double(width)
+                    
                     let drift = sin((time + offset) * 0.5) * 15.0
                     let x = baseX + drift
                     let y = progress * (Double(height) + 20) - 10
