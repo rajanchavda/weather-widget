@@ -224,6 +224,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 defer: false
             )
             
+            window.isReleasedWhenClosed = false
             window.backgroundColor = .clear
             window.isOpaque = false
             window.hasShadow = false
