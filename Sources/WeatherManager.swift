@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Network
 
 class WeatherManager: ObservableObject {
     @Published var currentTemp: Double = 0.0
@@ -14,6 +15,8 @@ class WeatherManager: ObservableObject {
     @Published var errorMessage: String? = nil
     
     private var timer: AnyCancellable?
+    private let pathMonitor = NWPathMonitor()
+    private var lastPathStatus: NWPath.Status = .satisfied
 
     /// User-specified manual location override. When non-nil, the app skips IP geolocation
     /// and uses these coordinates directly. Persisted across launches via UserDefaults.
@@ -33,6 +36,10 @@ class WeatherManager: ObservableObject {
         // No-op: Call start() after application has finished launching
     }
     
+    deinit {
+        pathMonitor.cancel()
+    }
+    
     func start() {
         // Start the initial fetch
         fetchWeather()
@@ -43,6 +50,25 @@ class WeatherManager: ObservableObject {
             .sink { [weak self] _ in
                 self?.fetchWeather()
             }
+            
+        // Start monitoring network path changes
+        setupNetworkMonitoring()
+    }
+    
+    private func setupNetworkMonitoring() {
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            guard let self = self else { return }
+            let status = path.status
+            print("[WeatherManager] Network path status updated: \(status). Previous status: \(self.lastPathStatus)")
+            
+            if status == .satisfied && self.lastPathStatus != .satisfied {
+                print("[WeatherManager] Network connection restored. Triggering instant fetch...")
+                self.fetchWeather()
+            }
+            
+            self.lastPathStatus = status
+        }
+        pathMonitor.start(queue: DispatchQueue.global(qos: .background))
     }
     
     func fetchWeather() {
@@ -134,7 +160,7 @@ class WeatherManager: ObservableObject {
         if Thread.isMainThread {
             block()
         } else {
-            RunLoop.main.perform(block)
+            DispatchQueue.main.async(execute: block)
         }
     }
     
@@ -164,7 +190,9 @@ class WeatherManager: ObservableObject {
 
     /// Search Open-Meteo's free geocoding API for a city by name. Returns the top match.
     func searchCity(_ query: String) async throws -> ManualLocation? {
-        var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search")!
+        guard var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search") else {
+            throw URLError(.badURL)
+        }
         components.queryItems = [
             URLQueryItem(name: "name", value: query),
             URLQueryItem(name: "count", value: "1"),

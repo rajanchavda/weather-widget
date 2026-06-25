@@ -308,7 +308,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     private func showLoginItemErrorAlert(_ error: Error) {
-        RunLoop.main.perform {
+        DispatchQueue.main.async {
             NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.messageText = "Launch at Login Error"
@@ -562,7 +562,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 print("[AppDelegate] About to call searchCity...")
                 let match = try await manager.searchCity(query)
                 print("[AppDelegate] searchCity returned, dispatching to main...")
-                RunLoop.main.perform {
+                DispatchQueue.main.async {
                     print("[AppDelegate] On main thread, processing result...")
                     guard let self = AppDelegate.shared else {
                         print("[AppDelegate] AppDelegate.shared is nil!")
@@ -583,7 +583,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } catch {
                 print("[AppDelegate] Geocoding failed: \(error.localizedDescription)")
-                RunLoop.main.perform {
+                DispatchQueue.main.async {
                     AppDelegate.shared?.showLocationAlert("Search failed", error.localizedDescription)
                 }
             }
@@ -606,10 +606,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func checkForUpdates() {
-        let url = URL(string: "https://api.github.com/repos/rajanchavda/weather-widget/releases/latest")!
+        guard let url = URL(string: "https://api.github.com/repos/rajanchavda/weather-widget/releases/latest") else {
+            return
+        }
         let task = URLSession.shared.dataTask(with: url) { data, response, error in
             guard let data = data, error == nil else {
-                RunLoop.main.perform {
+                DispatchQueue.main.async {
                     NSApp.activate(ignoringOtherApps: true)
                     let alert = NSAlert()
                     alert.messageText = "Update Check Failed"
@@ -623,13 +625,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             
             do {
                 if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                   let latestVersionTag = json["tag_name"] as? String,
-                   let htmlUrl = json["html_url"] as? String {
+                   let latestVersionTag = json["tag_name"] as? String {
                     
                     let latestVersion = latestVersionTag.replacingOccurrences(of: "v", with: "")
                     let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
                     
-                    RunLoop.main.perform {
+                    DispatchQueue.main.async {
                         NSApp.activate(ignoringOtherApps: true)
                         let alert = NSAlert()
                         
@@ -703,14 +704,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     relaunchTask.arguments = ["/bin/sh", "-c", relaunchScript]
                     try relaunchTask.run()
                     
-                    RunLoop.main.perform {
+                    DispatchQueue.main.async {
                         NSApplication.shared.terminate(nil)
                     }
                 } else {
                     let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
                     let errorString = String(data: errorData, encoding: .utf8) ?? "Unknown error"
                     
-                    RunLoop.main.perform {
+                    DispatchQueue.main.async {
                         let alert = NSAlert()
                         alert.messageText = "Update Failed"
                         alert.informativeText = "Could not update via Homebrew. Please run 'brew upgrade rajanchavda/tap/weatheroverlay' manually in Terminal.\n\nError:\n\(errorString.prefix(200))"
@@ -723,7 +724,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             } catch {
-                RunLoop.main.perform {
+                DispatchQueue.main.async {
                     let alert = NSAlert()
                     alert.messageText = "Update Failed"
                     alert.informativeText = "Failed to launch update process: \(error.localizedDescription)"
@@ -743,7 +744,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 // App Bootstrap
-let delegate = await MainActor.run { AppDelegate() }
+let delegate = MainActor.assumeIsolated { AppDelegate() }
 let app = NSApplication.shared
 app.delegate = delegate
 app.run()
