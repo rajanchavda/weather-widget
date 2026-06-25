@@ -86,6 +86,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("[AppDelegate] Starting the Weather Engine...")
         // Start the weather engine once AppKit is fully launched
         weatherManager.start()
+        
+        // Check for updates silently on launch
+        performUpdateCheck(isUserInitiated: false)
     }
     
     private func setupStatusItem() {
@@ -607,19 +610,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func checkForUpdates() {
+        performUpdateCheck(isUserInitiated: true)
+    }
+
+    private func performUpdateCheck(isUserInitiated: Bool) {
         guard let url = URL(string: "https://api.github.com/repos/rajanchavda/weather-widget/releases/latest") else {
             return
         }
         let task = URLSession.shared.dataTask(with: url) { data, response, error in
             guard let data = data, error == nil else {
-                DispatchQueue.main.async {
-                    NSApp.activate(ignoringOtherApps: true)
-                    let alert = NSAlert()
-                    alert.messageText = "Update Check Failed"
-                    alert.informativeText = "Could not check for updates. Please check your network connection."
-                    alert.alertStyle = .warning
-                    alert.addButton(withTitle: "OK")
-                    alert.runModal()
+                if isUserInitiated {
+                    DispatchQueue.main.async {
+                        NSApp.activate(ignoringOtherApps: true)
+                        let alert = NSAlert()
+                        alert.messageText = "Update Check Failed"
+                        alert.informativeText = "Could not check for updates. Please check your network connection."
+                        alert.alertStyle = .warning
+                        alert.addButton(withTitle: "OK")
+                        alert.runModal()
+                    }
                 }
                 return
             }
@@ -631,11 +640,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let latestVersion = latestVersionTag.replacingOccurrences(of: "v", with: "")
                     let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
                     
-                    DispatchQueue.main.async {
-                        NSApp.activate(ignoringOtherApps: true)
-                        let alert = NSAlert()
-                        
-                        if latestVersion.compare(currentVersion, options: .numeric) == .orderedDescending {
+                    if latestVersion.compare(currentVersion, options: .numeric) == .orderedDescending {
+                        DispatchQueue.main.async {
+                            NSApp.activate(ignoringOtherApps: true)
+                            let alert = NSAlert()
                             alert.messageText = "Update Available"
                             alert.informativeText = "A new version (\(latestVersion)) is available. You are running version \(currentVersion).\n\nWould you like to automatically update and restart the app?"
                             alert.alertStyle = .informational
@@ -645,7 +653,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             if alert.runModal() == .alertFirstButtonReturn {
                                 self.performUpdateAndRestart()
                             }
-                        } else {
+                        }
+                    } else if isUserInitiated {
+                        DispatchQueue.main.async {
+                            NSApp.activate(ignoringOtherApps: true)
+                            let alert = NSAlert()
                             alert.messageText = "Up to Date"
                             alert.informativeText = "You are running the latest version (\(currentVersion))."
                             alert.alertStyle = .informational
