@@ -281,6 +281,17 @@ This gives you a quick visual glance at whether temperatures are rising, falling
   - ipapi.co (IP geolocation, fallback)
 - **Dependencies**: None (pure Swift)
 
+## Contributing
+
+Contributions are welcome! Here's how you can help:
+
+1. **Bug Reports & Feature Requests:** Please use the [issue templates](.github/ISSUE_TEMPLATE) when creating new issues.
+2. **Pull Requests:** 
+   - Fork the repository and create a new branch.
+   - Follow the Swift coding style and guidelines.
+   - Ensure the app builds and functions correctly before submitting.
+   - Describe your changes clearly in the PR description.
+
 ## Documentation
 
 - **CLAUDE.md** - Comprehensive technical documentation for AI assistants
