@@ -11,6 +11,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     let weatherManager = WeatherManager()
     let settings = OverlaySettings()
+    var isUpdateReady = false
     private var cancellables = Set<AnyCancellable>()
     
     override init() {
@@ -362,7 +363,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             locationTitle = "Location: \(city)"
         }
         
-        button.title = title
+        if isUpdateReady {
+            button.title = title + " ⚠️"
+        } else {
+            button.title = title
+        }
         
         // Dynamic location/error label update in menu items
         if let menu = statusItem?.menu, menu.items.count > 1 {
@@ -641,17 +646,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
                     
                     if latestVersion.compare(currentVersion, options: .numeric) == .orderedDescending {
-                        DispatchQueue.main.async {
-                            NSApp.activate(ignoringOtherApps: true)
-                            let alert = NSAlert()
-                            alert.messageText = "Update Available"
-                            alert.informativeText = "A new version (\(latestVersion)) is available. You are running version \(currentVersion).\n\nWould you like to automatically update and restart the app?"
-                            alert.alertStyle = .informational
-                            alert.addButton(withTitle: "Update & Restart")
-                            alert.addButton(withTitle: "Cancel")
-                            
-                            if alert.runModal() == .alertFirstButtonReturn {
-                                self.performUpdateAndRestart()
+                        if isUserInitiated {
+                            // Interactive update check
+                            DispatchQueue.main.async {
+                                NSApp.activate(ignoringOtherApps: true)
+                                let alert = NSAlert()
+                                alert.messageText = "Update Available"
+                                alert.informativeText = "A new version (\(latestVersion)) is available. You are running version \(currentVersion).\n\nWould you like to automatically update and restart the app?"
+                                alert.alertStyle = .informational
+                                alert.addButton(withTitle: "Update & Restart")
+                                alert.addButton(withTitle: "Cancel")
+                                
+                                if alert.runModal() == .alertFirstButtonReturn {
+                                    self.performUpdateAndRestart(isSilent: false)
+                                }
+                            }
+                        } else {
+                            // Silent background check and automatic background download
+                            DispatchQueue.main.async {
+                                self.performUpdateAndRestart(isSilent: true)
                             }
                         }
                     } else if isUserInitiated {
@@ -673,12 +686,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         task.resume()
     }
 
-    private func performUpdateAndRestart() {
+    private func performUpdateAndRestart(isSilent: Bool) {
         guard let button = statusItem?.button else { return }
         
-        button.title = "🌤️ Updating..."
-        if let menu = statusItem?.menu, menu.items.count > 1 {
-            menu.items[1].title = "Status: Downloading update via Homebrew..."
+        if !isSilent {
+            button.title = "🌤️ Updating..."
+            if let menu = statusItem?.menu, menu.items.count > 1 {
+                menu.items[1].title = "Status: Downloading update via Homebrew..."
+            }
+            
+            // Inform the user that the update is running in the background to prevent confusion
+            NSApp.activate(ignoringOtherApps: true)
+            let progressAlert = NSAlert()
+            progressAlert.messageText = "Updating Weather Overlay"
+            progressAlert.informativeText = "The update is downloading and installing via Homebrew in the background.\n\nThe app will automatically restart once finished. This may take a few moments."
+            progressAlert.alertStyle = .informational
+            progressAlert.addButton(withTitle: "OK")
+            progressAlert.runModal()
         }
         
         Task.detached {
@@ -686,6 +710,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let pipe = Pipe()
             task.standardOutput = pipe
             task.standardError = pipe
+            
+            // Set up a robust environment with Homebrew and system paths
+            var env = ProcessInfo.processInfo.environment
+            let extraPaths = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+            if let currentPath = env["PATH"] {
+                env["PATH"] = "\(extraPaths):\(currentPath)"
+            } else {
+                env["PATH"] = extraPaths
+            }
+            task.environment = env
             
             let brewPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
             var brewURL: URL?
@@ -709,46 +743,92 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 task.waitUntilExit()
                 
                 if task.terminationStatus == 0 {
-                    // Update successful. Relaunch using a detached script
-                    let relaunchTask = Process()
-                    relaunchTask.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
-                    // Wait for the app to quit, then open it again
-                    let relaunchScript = "while pgrep 'WeatherOverlay' > /dev/null; do sleep 0.1; done; open -a 'WeatherOverlay'"
-                    relaunchTask.arguments = ["/bin/sh", "-c", relaunchScript]
-                    try relaunchTask.run()
-                    
-                    DispatchQueue.main.async {
-                        NSApplication.shared.terminate(nil)
+                    if isSilent {
+                        // Silent flow: Set update ready state and update the UI with a warning badge
+                        DispatchQueue.main.async {
+                            self.isUpdateReady = true
+                            self.updateStatusItem(
+                                temp: self.weatherManager.currentTemp,
+                                code: self.weatherManager.weatherCode,
+                                city: self.weatherManager.cityName,
+                                hasData: self.weatherManager.hasData,
+                                error: self.weatherManager.errorMessage
+                            )
+                            if let menu = self.statusItem?.menu,
+                               let item = menu.items.first(where: { $0.action == #selector(self.checkForUpdates) }) {
+                                item.title = "Update and Restart ⚠️"
+                                item.action = #selector(self.triggerRelaunch)
+                            }
+                        }
+                    } else {
+                        // Interactive flow: Relaunch immediately
+                        DispatchQueue.main.async {
+                            self.relaunchApp()
+                        }
                     }
                 } else {
                     let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
                     let errorString = String(data: errorData, encoding: .utf8) ?? "Unknown error"
                     
+                    if !isSilent {
+                        DispatchQueue.main.async {
+                            let alert = NSAlert()
+                            alert.messageText = "Update Failed"
+                            alert.informativeText = "Could not update via Homebrew. Please run 'brew upgrade rajanchavda/tap/weatheroverlay' manually in Terminal.\n\nError:\n\(errorString.prefix(200))"
+                            alert.alertStyle = .warning
+                            alert.addButton(withTitle: "OK")
+                            alert.runModal()
+                            
+                            // Restore normal state
+                            self.weatherManager.fetchWeather()
+                        }
+                    } else {
+                        print("[Update] Silent background update failed: \(errorString)")
+                    }
+                }
+            } catch {
+                if !isSilent {
                     DispatchQueue.main.async {
                         let alert = NSAlert()
                         alert.messageText = "Update Failed"
-                        alert.informativeText = "Could not update via Homebrew. Please run 'brew upgrade rajanchavda/tap/weatheroverlay' manually in Terminal.\n\nError:\n\(errorString.prefix(200))"
+                        alert.informativeText = "Failed to launch update process: \(error.localizedDescription)"
                         alert.alertStyle = .warning
                         alert.addButton(withTitle: "OK")
                         alert.runModal()
                         
-                        // Restore normal state
                         self.weatherManager.fetchWeather()
                     }
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    let alert = NSAlert()
-                    alert.messageText = "Update Failed"
-                    alert.informativeText = "Failed to launch update process: \(error.localizedDescription)"
-                    alert.alertStyle = .warning
-                    alert.addButton(withTitle: "OK")
-                    alert.runModal()
-                    
-                    self.weatherManager.fetchWeather()
+                } else {
+                    print("[Update] Silent background update failed to launch: \(error.localizedDescription)")
                 }
             }
         }
+    }
+
+    private func relaunchApp() {
+        let bundlePath = Bundle.main.bundlePath
+        let executablePath = Bundle.main.executablePath ?? bundlePath
+        let launchCmd = bundlePath.hasSuffix(".app") ? "open '\(bundlePath)'" : "'\(executablePath)' &"
+        
+        // Relaunch using a detached script targeting the exact bundle path or executable
+        let relaunchTask = Process()
+        relaunchTask.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
+        let relaunchScript = "while pgrep 'WeatherOverlay' > /dev/null; do sleep 0.1; done; \(launchCmd)"
+        relaunchTask.arguments = ["/bin/sh", "-c", relaunchScript]
+        
+        do {
+            try relaunchTask.run()
+        } catch {
+            print("Failed to execute relaunch: \(error.localizedDescription)")
+        }
+        
+        DispatchQueue.main.async {
+            NSApplication.shared.terminate(nil)
+        }
+    }
+
+    @objc private func triggerRelaunch() {
+        self.relaunchApp()
     }
 
     @objc private func quitApp() {

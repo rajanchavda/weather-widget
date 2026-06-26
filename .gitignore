@@ -8,3 +8,4 @@ DerivedData/
 
 # Packages directory (if using local dependencies)
 Packages/
+nohup.out
