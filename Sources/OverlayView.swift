@@ -52,7 +52,7 @@ struct OverlayView: View {
             ZStack(alignment: .bottom) {
                 // 1. Atmospheric Aurora Background
                 if settings.showAurora {
-                    auroraView
+                    auroraView(height: geometry.size.height)
                         .transition(.opacity)
 
                     // Stars for clear night sky
@@ -77,7 +77,10 @@ struct OverlayView: View {
 
                     // Fog animation
                     if code == 45 || code == 48 {
-                        FogView(width: geometry.size.width, height: geometry.size.height, isNight: checkIsNight())
+                        FogView(width: geometry.size.width, height: geometry.size.height / 2, isNight: checkIsNight())
+                            .frame(height: geometry.size.height / 2)
+                            .frame(maxHeight: .infinity, alignment: .top)
+                            .clipped()
                             .id("fog-\(code)")
                     }
 
@@ -123,14 +126,15 @@ struct OverlayView: View {
     }
     
     // MARK: - Aurora (Ambient background gradient)
-    private var auroraView: some View {
+    private func auroraView(height: CGFloat) -> some View {
         let colors = getAuroraColors()
         return LinearGradient(
             gradient: Gradient(colors: colors),
             startPoint: .top,
             endPoint: .bottom
         )
-        .ignoresSafeArea()
+        .frame(height: height / 2)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
 
@@ -209,16 +213,16 @@ struct OverlayView: View {
         case 45, 48: // Fog
             if isNight {
                 return [
-                    Color(red: 0.10, green: 0.13, blue: 0.25).opacity(0.65), // Richer indigo-grey
-                    Color(red: 0.18, green: 0.22, blue: 0.32).opacity(0.50),
-                    Color(red: 0.28, green: 0.35, blue: 0.48).opacity(0.35), // Visible moonlit slate
+                    Color(red: 0.10, green: 0.13, blue: 0.25).opacity(0.25), // Lighter, moonlit indigo-grey
+                    Color(red: 0.18, green: 0.22, blue: 0.32).opacity(0.18),
+                    Color(red: 0.28, green: 0.35, blue: 0.48).opacity(0.12), // Subtle moonlit slate
                     Color.clear
                 ]
             } else {
                 return [
-                    Color(red: 0.85, green: 0.83, blue: 0.80).opacity(0.70), // Richer warm grey
-                    Color(red: 0.95, green: 0.90, blue: 0.82).opacity(0.55), // Stronger gold highlight
-                    Color(red: 0.90, green: 0.90, blue: 0.92).opacity(0.40), // Misty white
+                    Color(red: 0.85, green: 0.83, blue: 0.80).opacity(0.30), // Lighter, warm grey
+                    Color(red: 0.95, green: 0.90, blue: 0.82).opacity(0.22), // Soft gold highlight
+                    Color(red: 0.90, green: 0.90, blue: 0.92).opacity(0.15), // Misty white
                     Color.clear
                 ]
             }
