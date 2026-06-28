@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Build and package app
+        run: bash build_app.sh "$VERSION"
+
+      - name: Prepare release notes
+        run: |
+          SHA=$(shasum -a 256 WeatherOverlay.zip | cut -d' ' -f1)
+          cat > release_notes.md <<EOF
+          ## WeatherOverlay v${VERSION}
+
+          ### SHA-256 Checksum
+          \`\`\`
+          ${SHA}
+          \`\`\`
+
+          ### Homebrew Cask
+          \`\`\`ruby
+          cask "weatheroverlay" do
+            version "${VERSION}"
+            sha256 "${SHA}"
+
+            url "https://github.com/${{ github.repository }}/releases/download/v#{version}/WeatherOverlay.zip"
+            name "WeatherOverlay"
+            desc "Ambient weather menu bar overlay for macOS"
+            homepage "https://github.com/${{ github.repository }}"
+
+            app "WeatherOverlay.app"
+
+            postflight do
+              system_command "xattr",
+                             args: ["-cr", "\#{appdir}/WeatherOverlay.app"]
+            end
+
+            zap trash: [
+              "~/.gemini/antigravity-cli/brain/7fcdcce5-12c9-4da4-b893-a73781ca8854"
+            ]
+          end
+          EOF
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          files: WeatherOverlay.zip
