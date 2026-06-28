@@ -4,7 +4,7 @@ import Combine
 import ServiceManagement
 
 @MainActor
-class AppDelegate: NSObject, NSApplicationDelegate {
+public class AppDelegate: NSObject, NSApplicationDelegate {
     static var shared: AppDelegate?
 
     var overlayWindows: [NSWindow] = []
@@ -17,7 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var menuBarManager: MenuBarManager!
     var updateManager: UpdateManager!
 
-    override init() {
+    public override init() {
         super.init()
         AppDelegate.shared = self
         self.menuBarManager = MenuBarManager(appDelegate: self, weatherManager: weatherManager, settings: settings)
@@ -30,7 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.removeObserver(self)
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         print("[AppDelegate] applicationDidFinishLaunching started.")
         NSApp.setActivationPolicy(.accessory)
         ProcessInfo.processInfo.disableAutomaticTermination("WeatherOverlayBackground")

@@ -7,13 +7,23 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "WeatherOverlay", targets: ["WeatherOverlay"])
+        .executable(name: "WeatherOverlay", targets: ["WeatherOverlay"]),
+        .library(name: "WeatherOverlayCore", targets: ["WeatherOverlayCore"])
     ],
     targets: [
+        .target(
+            name: "WeatherOverlayCore",
+            path: "Sources/Core"
+        ),
         .executableTarget(
             name: "WeatherOverlay",
+            dependencies: ["WeatherOverlayCore"],
             path: "Sources",
-            exclude: ["screenshots"]
+            exclude: ["Core", "screenshots"]
+        ),
+        .testTarget(
+            name: "WeatherOverlayTests",
+            dependencies: ["WeatherOverlayCore"]
         )
     ]
 )

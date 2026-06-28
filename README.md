@@ -6,6 +6,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Weather API](https://img.shields.io/badge/Weather-Open--Meteo-brightgreen.svg)](https://open-meteo.com/)
 [![Battery Impact](https://img.shields.io/badge/Battery-Low%20Impact-success.svg)](#-performance--battery-optimization)
+[![Tests](https://img.shields.io/badge/Tests-80%20passing-brightgreen.svg)](#-development)
 [![GitHub stars](https://img.shields.io/github/stars/rajanchavda/weather-widget?style=social)](https://github.com/rajanchavda/weather-widget/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/rajanchavda/weather-widget.svg)](https://github.com/rajanchavda/weather-widget/issues)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-brightgreen.svg)](https://github.com/rajanchavda/weather-widget/commits/main)
@@ -305,31 +306,66 @@ Contributions are welcome! Here's how you can help:
 
 ```
 WeatherOverlay/
-├── Package.swift                  # SPM manifest
+├── Package.swift                  # SPM manifest (3 targets)
 └── Sources/
     ├── main.swift                 # Bootstrap entry point
-    ├── App/
-    │   ├── AppDelegate.swift      # Lifecycle, overlay window, @objc actions
-    │   ├── MenuBarManager.swift   # Status item + NSMenu
-    │   └── UpdateManager.swift    # GitHub updates + Homebrew + relaunch
-    ├── Weather/
-    │   ├── WeatherManager.swift   # Data fetching + state management
-    │   └── Models.swift           # API response types
-    ├── Settings/
-    │   └── OverlaySettings.swift  # User preferences
-    ├── Views/
-    │   ├── OverlayView.swift      # Composition root
-    │   ├── AuroraBackground.swift # Weather gradient
-    │   ├── StarsView.swift        # Twinkling night stars
-    │   ├── RainView.swift         # 3-layer rain + lightning
-    │   ├── SnowView.swift         # Snowfall animation
-    │   ├── SunView.swift          # Day emoji
-    │   ├── CloudView.swift        # Cloud emoji
-    │   ├── FogView.swift          # Fog emoji
-    │   └── TemperatureLineView.swift # 12-hour forecast graph
-    └── Utils/
-        └── ColorHelpers.swift     # Color functions
+    ├── Core/
+    │   ├── App/
+    │   │   ├── AppDelegate.swift      # Lifecycle, overlay window, @objc actions
+    │   │   ├── MenuBarManager.swift   # Status item + NSMenu
+    │   │   └── UpdateManager.swift    # GitHub updates + Homebrew + relaunch
+    │   ├── Weather/
+    │   │   ├── WeatherManager.swift   # Data fetching + state management
+    │   │   └── Models.swift           # API response types
+    │   ├── Settings/
+    │   │   └── OverlaySettings.swift  # User preferences
+    │   ├── Views/
+    │   │   ├── OverlayView.swift      # Composition root
+    │   │   ├── AuroraBackground.swift # Weather gradient
+    │   │   ├── StarsView.swift        # Twinkling night stars
+    │   │   ├── RainView.swift         # 3-layer rain + lightning
+    │   │   ├── SnowView.swift         # Snowfall animation
+    │   │   ├── SunView.swift          # Day emoji
+    │   │   ├── CloudView.swift        # Cloud emoji
+    │   │   ├── FogView.swift          # Fog emoji
+    │   │   └── TemperatureLineView.swift # 12-hour forecast graph
+    │   └── Utils/
+    │       └── ColorHelpers.swift     # Color functions
+    └── Tests/
+        └── WeatherOverlayTests/
+            ├── ColorHelpersTests.swift
+            ├── ModelsTests.swift
+            ├── OverlaySettingsTests.swift
+            ├── WeatherManagerTests.swift
+            ├── MenuBarManagerTests.swift
+            ├── UpdateManagerTests.swift
+            └── Helpers/
+                └── URLProtocolMock.swift
 ```
+
+## 🧪 Development
+
+### Running Tests
+
+The project includes **80 unit tests** covering all business logic layers:
+
+```bash
+swift test
+# Run specific test suite:
+swift test --filter WeatherManagerTests
+```
+
+**Test Coverage:**
+| Layer | Tests | Status |
+|-------|-------|--------|
+| Color Helpers (temperature/aurora) | 19 | ✅ |
+| Models (JSON decoding, persistence) | 10 | ✅ |
+| Settings (defaults, mutations, enums) | 15 | ✅ |
+| Weather Manager (fetch, search, errors) | 12 | ✅ |
+| Menu Bar Manager (formatting, states) | 15 | ✅ |
+| Update Manager (version parsing, network) | 9 | ✅ |
+
+Network mocking uses `URLProtocolMock` — intercepts all HTTP requests deterministically without modifying production code.
 
 ## License
 

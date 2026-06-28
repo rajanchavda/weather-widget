@@ -144,7 +144,8 @@ func getMenuBarFrame() -> NSRect {
 
 ### Build Configuration
 - Swift Tools Version: 5.9
-- Product: Executable (WeatherOverlay)
+- Products: Executable (WeatherOverlay), Library (WeatherOverlayCore)
+- Targets: WeatherOverlayCore (library), WeatherOverlay (executable), WeatherOverlayTests (tests)
 - No external package dependencies
 
 ### Performance Considerations
@@ -184,40 +185,78 @@ Publishers.Merge(
 - **Animations**: Declarative SwiftUI modifiers
 - **Async**: Swift concurrency (`async`/`await`) for network calls
 
+## Testing
+
+### Test Suite
+- **Framework**: XCTest via Swift Package Manager (`swift test`)
+- **Total Tests**: 80
+- **Coverage**: 100% of logic/state layers (WeatherManager, MenuBarManager, UpdateManager, OverlaySettings, Models, ColorHelpers)
+
+### Test Files
+| File | Tests | What It Covers |
+|------|-------|----------------|
+| `ColorHelpersTests.swift` | 19 | Temperature color boundaries, aurora colors (all WMO categories, day/night) |
+| `ModelsTests.swift` | 10 | JSON decoding for all API types, ManualLocation Codable round-trip |
+| `OverlaySettingsTests.swift` | 15 | Defaults, mutations, objectWillChange emission, enum coverage |
+| `WeatherManagerTests.swift` | 12 | Initial state, success fetch, geo-failure fallback, network error, manual location, searchCity, night detection, stale response discard |
+| `MenuBarManagerTests.swift` | 15 | Status item text (11 emoji types), °C/°F formatting, error/no-data states, update-ready indicator, location title |
+| `UpdateManagerTests.swift` | 9 | GitHub release JSON parsing, version comparison, network integration with mock |
+
+### Test Helpers
+- **URLProtocolMock** — Custom URLProtocol subclass that intercepts all URL requests for deterministic mocking without modifying production code
+
+### Running Tests
+```bash
+swift test
+# For verbose output:
+swift test --filter WeatherManagerTests
+```
+
 ## Project Structure
 ```
 WeatherOverlay/
-├── Package.swift                 # Swift Package Manager manifest
+├── Package.swift                 # Swift Package Manager manifest (3 targets)
 ├── README.md                     # Quick start guide
 ├── CLAUDE.md                     # This file - technical docs
 ├── GEMINI.md                     # AI context documentation
-└── Sources/
-    ├── main.swift                # Bootstrap entry point (6 lines)
-    ├── App/
-    │   ├── AppDelegate.swift     # App lifecycle, overlay window, @objc actions
-    │   ├── MenuBarManager.swift  # Status item + NSMenu
-    │   └── UpdateManager.swift   # GitHub release + Homebrew upgrade + relaunch
-    ├── Weather/
-    │   ├── WeatherManager.swift  # Weather fetching + state management
-    │   └── Models.swift          # API response types, ManualLocation
-    ├── Settings/
-    │   └── OverlaySettings.swift # ObservableObject user preferences
-    ├── Views/
-    │   ├── OverlayView.swift     # ZStack composition root
-    │   ├── AuroraBackground.swift
-    │   ├── StarsView.swift
-    │   ├── RainView.swift
-    │   ├── SnowView.swift
-    │   ├── SunView.swift
-    │   ├── CloudView.swift
-    │   ├── FogView.swift
-    │   └── TemperatureLineView.swift
-    └── Utils/
-        └── ColorHelpers.swift    # Temperature + aurora color functions
+├── Sources/
+│   ├── main.swift                # Bootstrap entry point (6 lines)
+│   ├── Core/
+│   │   ├── App/
+│   │   │   ├── AppDelegate.swift # App lifecycle, overlay window, @objc actions
+│   │   │   ├── MenuBarManager.swift # Status item + NSMenu
+│   │   │   └── UpdateManager.swift  # GitHub release + Homebrew upgrade + relaunch
+│   │   ├── Weather/
+│   │   │   ├── WeatherManager.swift # Weather fetching + state management
+│   │   │   └── Models.swift         # API response types, ManualLocation
+│   │   ├── Settings/
+│   │   │   └── OverlaySettings.swift # ObservableObject user preferences
+│   │   ├── Views/
+│   │   │   ├── OverlayView.swift     # ZStack composition root
+│   │   │   ├── AuroraBackground.swift
+│   │   │   ├── StarsView.swift
+│   │   │   ├── RainView.swift
+│   │   │   ├── SnowView.swift
+│   │   │   ├── SunView.swift
+│   │   │   ├── CloudView.swift
+│   │   │   ├── FogView.swift
+│   │   │   └── TemperatureLineView.swift
+│   │   └── Utils/
+│   │       └── ColorHelpers.swift # Temperature + aurora color functions
+└── Tests/
+    └── WeatherOverlayTests/
+        ├── ColorHelpersTests.swift
+        ├── ModelsTests.swift
+        ├── OverlaySettingsTests.swift
+        ├── WeatherManagerTests.swift
+        ├── MenuBarManagerTests.swift
+        ├── UpdateManagerTests.swift
+        └── Helpers/
+            └── URLProtocolMock.swift
 ```
 
 ---
 
 **Last Updated**: 2026-06-28  
 **Project Version**: 1.0  
-**macOS Target**: 13.0+ (Ventura and later)
+

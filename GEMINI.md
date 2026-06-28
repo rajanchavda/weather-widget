@@ -198,10 +198,15 @@ Displays 12-hour temperature forecast as a line graph at the bottom of the menu 
    - Requires User-Agent header
 
 ### Build System
-Swift Package Manager:
+Swift Package Manager (3 targets):
+- `WeatherOverlayCore` — Library target with all logic (supports `@testable import`)
+- `WeatherOverlay` — Executable target (thin bootstrap entry point)
+- `WeatherOverlayTests` — XCTest suite (80 tests)
+
 ```swift
-.platforms([.macOS(.v13)])
-.executableTarget(name: "WeatherOverlay", path: "Sources")
+.target(name: "WeatherOverlayCore", path: "Sources/Core")
+.executableTarget(name: "WeatherOverlay", dependencies: ["WeatherOverlayCore"], path: "Sources")
+.testTarget(name: "WeatherOverlayTests", dependencies: ["WeatherOverlayCore"])
 ```
 
 ## Performance Characteristics
@@ -228,6 +233,17 @@ Swift Package Manager:
 - **Deterministic animations**: No random() calls per frame
 - **Tiny render area**: Screen width × 24px height only
 
+## Development Workflow
+
+### TDD Requirement
+All new features must follow Test-Driven Development:
+1. **Write the test first** — Define expected behavior in a failing XCTest case
+2. **Implement the feature** — Write the minimal code to make the test pass
+3. **Verify** — Run `swift test` and confirm all tests (new + existing) pass
+4. **Refactor** — Clean up implementation while keeping tests green
+
+Tests should cover: success paths, error/failure modes, boundary conditions, and any state mutations. Network-dependent code must use `URLProtocolMock` for deterministic mocking.
+
 ## Code Quality Notes
 
 ### Conventions Used
@@ -244,7 +260,7 @@ Well-named functions/variables are self-documenting. Comments only when non-obvi
 
 ### `Package.swift` (18 lines)
 - Swift Package Manager manifest
-- Defines executable target
+- Defines 3 targets: `WeatherOverlayCore` (library), `WeatherOverlay` (executable), `WeatherOverlayTests` (tests)
 - macOS 13.0+ platform requirement
 
 ### `Sources/main.swift` (6 lines)
@@ -297,6 +313,15 @@ Well-named functions/variables are self-documenting. Comments only when non-obvi
 - `AuroraBackground.swift` (~92 lines) — Weather-responsive gradient
 - `SunView.swift`, `CloudView.swift`, `FogView.swift` (~25, 23, 19 lines) — Weather emoji overlays
 - `TemperatureLineView.swift` (~37 lines) — Temperature forecast graph
+
+### Test Suite (80 tests)
+- **`ColorHelpersTests.swift` (19)** — Temperature color boundaries, aurora colors for all WMO categories (day/night)
+- **`ModelsTests.swift` (10)** — JSON decoding for WeatherResponse, GeoResponse, FreeGeoResponse, GeocodingResponse; ManualLocation Codable round-trip
+- **`OverlaySettingsTests.swift` (15)** — Defaults, mutations, objectWillChange emission, WeatherUnit/AuroraStyle enum coverage
+- **`WeatherManagerTests.swift` (12)** — Initial state, success fetch, geo-failure fallback, network error, manual location overrides, searchCity, night detection, stale response discard via fetchGeneration guard
+- **`MenuBarManagerTests.swift` (15)** — Status item text for all 11 weather conditions, °C/°F formatting, error/no-data/update-ready states, location title
+- **`UpdateManagerTests.swift` (9)** — GitHub release JSON parsing, version comparison with `compare(_:options:.numeric)`, network integration via URLProtocolMock
+- **`Helpers/URLProtocolMock.swift`** — Custom URLProtocol subclass intercepting all URL requests; supports immediate and delayed responses for deterministic mock behavior
 
 ---
 

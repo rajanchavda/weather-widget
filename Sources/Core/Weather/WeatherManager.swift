@@ -25,14 +25,16 @@ class WeatherManager: ObservableObject {
         set { ManualLocation.save(newValue) }
     }
 
-    private let session: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 5.0
-        config.timeoutIntervalForResource = 5.0
-        return URLSession(configuration: config)
-    }()
+    private let session: URLSession
 
-    init() {}
+    init(session: URLSession? = nil) {
+        self.session = session ?? {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 5.0
+            config.timeoutIntervalForResource = 5.0
+            return URLSession(configuration: config)
+        }()
+    }
 
     nonisolated deinit {
         pathMonitor.cancel()

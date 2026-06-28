@@ -1,4 +1,5 @@
 import Cocoa
+import WeatherOverlayCore
 
 let delegate = MainActor.assumeIsolated { AppDelegate() }
 let app = NSApplication.shared
