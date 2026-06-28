@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import Network
 
+@MainActor
 class WeatherManager: ObservableObject {
     @Published var currentTemp: Double = 0.0
     @Published var weatherCode: Int = 0
@@ -15,8 +16,12 @@ class WeatherManager: ObservableObject {
     @Published var errorMessage: String? = nil
     
     private var timer: AnyCancellable?
+    private var fetchGeneration: Int = 0
+    // pathMonitor and lastPathStatus are accessed only from the serial network-monitor
+    // queue (and pathMonitor.cancel() from deinit, which is thread-safe on NWPathMonitor),
+    // so we opt out of actor isolation for them.
     private let pathMonitor = NWPathMonitor()
-    private var lastPathStatus: NWPath.Status = .satisfied
+    nonisolated(unsafe) private var lastPathStatus: NWPath.Status = .satisfied
 
     /// User-specified manual location override. When non-nil, the app skips IP geolocation
     /// and uses these coordinates directly. Persisted across launches via UserDefaults.
@@ -36,7 +41,7 @@ class WeatherManager: ObservableObject {
         // No-op: Call start() after application has finished launching
     }
     
-    deinit {
+    nonisolated deinit {
         pathMonitor.cancel()
     }
     
@@ -56,30 +61,36 @@ class WeatherManager: ObservableObject {
     }
     
     private func setupNetworkMonitoring() {
+        // pathUpdateHandler is invoked serially on the monitor's own queue, so
+        // computing the transition synchronously here is race-free. We only hop
+        // to the main actor to trigger the fetch.
         pathMonitor.pathUpdateHandler = { [weak self] path in
             guard let self = self else { return }
             let status = path.status
-            print("[WeatherManager] Network path status updated: \(status). Previous status: \(self.lastPathStatus)")
-            
-            if status == .satisfied && self.lastPathStatus != .satisfied {
-                print("[WeatherManager] Network connection restored. Triggering instant fetch...")
-                self.fetchWeather()
-            }
-            
+            let previous = self.lastPathStatus
             self.lastPathStatus = status
+            print("[WeatherManager] Network path status updated: \(status). Previous status: \(previous)")
+            if status == .satisfied && previous != .satisfied {
+                print("[WeatherManager] Network connection restored. Triggering instant fetch...")
+                Task { @MainActor [weak self] in
+                    self?.fetchWeather()
+                }
+            }
         }
         pathMonitor.start(queue: DispatchQueue.global(qos: .background))
     }
     
     func fetchWeather() {
         print("[WeatherManager] fetchWeather() invoked. isFetching=\(isFetching)")
-        // Note: don't bail out when isFetching=true. A user-initiated location change
-        // must always trigger a fresh fetch even if a stale request is still pending —
-        // the stale request will harmlessly land later and overwrite with the same or older data.
+        // Bump the generation so any in-flight prior Task's results are ignored when
+        // they land — prevents a slow stale fetch from clobbering newer state
+        // (e.g. London response arriving after a user switched to Mumbai).
+        fetchGeneration &+= 1
+        let generation = fetchGeneration
         isFetching = true
         self.errorMessage = nil
-        
-        print("[WeatherManager] Spawning background fetch task...")
+
+        print("[WeatherManager] Spawning background fetch task (gen=\(generation))...")
         Task {
             print("[WeatherManager] Background fetch task started.")
             do {
@@ -106,61 +117,54 @@ class WeatherManager: ObservableObject {
                 let weather = try await fetchWeatherData(lat: lat, lon: lon)
                 print("[WeatherManager] Weather data fetched. Temp=\(weather.current.temperature_2m)°C, WMO Code=\(weather.current.weather_code)")
                 
-                // 3. Update published state on the Main Thread
-                runOnMainThread { [weak self] in
-                    guard let self = self else { return }
+                // 3. Update published state (inherits @MainActor from enclosing class)
+                guard generation == self.fetchGeneration else {
+                    print("[WeatherManager] Discarding stale success result (gen=\(generation), current=\(self.fetchGeneration))")
+                    return
+                }
+                self.currentTemp = weather.current.temperature_2m
+                self.weatherCode = weather.current.weather_code
+                self.hourlyTemps = Array(weather.hourly.temperature_2m.prefix(12))
+                self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
+                self.cityName = city
+                self.isNight = weather.current.is_day == 0
+                self.lastUpdated = Date()
+                self.hasData = true
+                self.isFetching = false
+                print("[WeatherManager] fetchWeather() completed successfully.")
+            } catch {
+                print("[WeatherManager] Primary fetch error: \(error.localizedDescription)")
+                let primaryErrStr = error.localizedDescription
+
+                do {
+                    print("[WeatherManager] Initiating fallback fetch (London: 51.5074, -0.1278)...")
+                    let weather = try await fetchWeatherData(lat: 51.5074, lon: -0.1278)
+
+                    guard generation == self.fetchGeneration else {
+                        print("[WeatherManager] Discarding stale fallback result (gen=\(generation), current=\(self.fetchGeneration))")
+                        return
+                    }
+                    self.cityName = "London (Fallback)"
                     self.currentTemp = weather.current.temperature_2m
                     self.weatherCode = weather.current.weather_code
                     self.hourlyTemps = Array(weather.hourly.temperature_2m.prefix(12))
                     self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
-                    self.cityName = city
                     self.isNight = weather.current.is_day == 0
                     self.lastUpdated = Date()
                     self.hasData = true
+                    self.errorMessage = nil
                     self.isFetching = false
-                    print("[WeatherManager] fetchWeather() completed successfully. UI updated on main thread.")
-                }
-            } catch {
-                print("[WeatherManager] Primary fetch error: \(error.localizedDescription)")
-                let primaryErrStr = error.localizedDescription
-                
-                // If it fails, fallback to a sensible default (e.g. London / Greenwich coordinates)
-                do {
-                    print("[WeatherManager] Initiating fallback fetch (London: 51.5074, -0.1278)...")
-                    let weather = try await fetchWeatherData(lat: 51.5074, lon: -0.1278)
-                    
-                    runOnMainThread { [weak self] in
-                        guard let self = self else { return }
-                        self.cityName = "London (Fallback)"
-                        self.currentTemp = weather.current.temperature_2m
-                        self.weatherCode = weather.current.weather_code
-                        self.hourlyTemps = Array(weather.hourly.temperature_2m.prefix(12))
-                        self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
-                        self.isNight = weather.current.is_day == 0
-                        self.lastUpdated = Date()
-                        self.hasData = true
-                        self.errorMessage = nil
-                        self.isFetching = false
-                        print("[WeatherManager] Fallback completed and updated on main thread.")
-                    }
+                    print("[WeatherManager] Fallback completed.")
                 } catch {
                     print("[WeatherManager] Fallback weather fetch also failed: \(error.localizedDescription)")
-                    let fallbackErrStr = error.localizedDescription
-                    runOnMainThread { [weak self] in
-                        guard let self = self else { return }
-                        self.errorMessage = "Fetch Failed: \(primaryErrStr) (Fallback failed: \(fallbackErrStr))"
-                        self.isFetching = false
+                    guard generation == self.fetchGeneration else {
+                        print("[WeatherManager] Discarding stale error (gen=\(generation), current=\(self.fetchGeneration))")
+                        return
                     }
+                    self.errorMessage = "Fetch Failed: \(primaryErrStr) (Fallback failed: \(error.localizedDescription))"
+                    self.isFetching = false
                 }
             }
-        }
-    }
-    
-    private func runOnMainThread(_ block: @escaping @Sendable () -> Void) {
-        if Thread.isMainThread {
-            block()
-        } else {
-            DispatchQueue.main.async(execute: block)
         }
     }
     
@@ -189,7 +193,7 @@ class WeatherManager: ObservableObject {
     }
 
     /// Search Open-Meteo's free geocoding API for a city by name. Returns the top match.
-    func searchCity(_ query: String) async throws -> ManualLocation? {
+    nonisolated func searchCity(_ query: String) async throws -> ManualLocation? {
         guard var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search") else {
             throw URLError(.badURL)
         }

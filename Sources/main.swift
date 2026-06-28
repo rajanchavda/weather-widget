@@ -69,19 +69,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
         
-        // Observe WeatherManager publishers and update the status item UI reactively
-        print("[AppDelegate] Subscribing to WeatherManager publishers...")
-        Publishers.CombineLatest(
-            Publishers.CombineLatest3(weatherManager.$currentTemp, weatherManager.$weatherCode, weatherManager.$cityName),
-            Publishers.CombineLatest(weatherManager.$hasData, weatherManager.$errorMessage)
+        // SwiftUI views observe WeatherManager directly; AppKit's NSStatusItem can't,
+        // so we redraw it whenever the manager or settings publish a change.
+        print("[AppDelegate] Subscribing to WeatherManager / settings change events...")
+        Publishers.Merge(
+            weatherManager.objectWillChange.map { _ in () },
+            settings.objectWillChange.map { _ in () }
         )
         .receive(on: RunLoop.main)
-        .sink { [weak self] info, status in
-            let (temp, code, city) = info
-            let (hasData, errMsg) = status
-            print("[AppDelegate] Publisher event received: temp=\(temp)°C, code=\(code), city=\(city), hasData=\(hasData), error=\(errMsg ?? "nil")")
-            self?.updateStatusItem(temp: temp, code: code, city: city, hasData: hasData, error: errMsg)
-        }
+        .sink { [weak self] in self?.updateStatusItem() }
         .store(in: &cancellables)
         
         print("[AppDelegate] Starting the Weather Engine...")
@@ -339,28 +335,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
     
-    private func updateStatusItem(temp: Double, code: Int, city: String, hasData: Bool, error: String?) {
+    private func updateStatusItem() {
         guard let button = statusItem?.button else { return }
-        
+
         let title: String
         let locationTitle: String
-        
-        if let error = error {
+
+        if let error = weatherManager.errorMessage {
             title = "⚠️ Err"
             locationTitle = "Error: \(error)"
-        } else if !hasData {
+        } else if !weatherManager.hasData {
             title = "🌤️ --"
             locationTitle = "Location: Detecting..."
         } else {
-            let emoji = getWeatherEmoji(code)
-            let displayedTemp: Double
-            if settings.selectedUnit == .fahrenheit {
-                displayedTemp = temp * 9.0 / 5.0 + 32.0
-            } else {
-                displayedTemp = temp
-            }
+            let emoji = getWeatherEmoji(weatherManager.weatherCode)
+            let temp = weatherManager.currentTemp
+            let displayedTemp = settings.selectedUnit == .fahrenheit ? temp * 9.0 / 5.0 + 32.0 : temp
             title = String(format: "%@ %.1f%@", emoji, displayedTemp, settings.selectedUnit.rawValue)
-            locationTitle = "Location: \(city)"
+            locationTitle = "Location: \(weatherManager.cityName)"
         }
         
         if isUpdateReady {
@@ -436,7 +428,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-            updateStatusItem(temp: weatherManager.currentTemp, code: weatherManager.weatherCode, city: weatherManager.cityName, hasData: weatherManager.hasData, error: weatherManager.errorMessage)
+            updateStatusItem()
         }
     }
 
@@ -533,7 +525,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        updateStatusItem(temp: weatherManager.currentTemp, code: weatherManager.weatherCode, city: weatherManager.cityName, hasData: weatherManager.hasData, error: weatherManager.errorMessage)
+        updateStatusItem()
     }
 
     @objc private func refreshWeather() {
@@ -747,13 +739,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         // Silent flow: Set update ready state and update the UI with a warning badge
                         DispatchQueue.main.async {
                             self.isUpdateReady = true
-                            self.updateStatusItem(
-                                temp: self.weatherManager.currentTemp,
-                                code: self.weatherManager.weatherCode,
-                                city: self.weatherManager.cityName,
-                                hasData: self.weatherManager.hasData,
-                                error: self.weatherManager.errorMessage
-                            )
+                            self.updateStatusItem()
                             if let menu = self.statusItem?.menu,
                                let item = menu.items.first(where: { $0.action == #selector(self.checkForUpdates) }) {
                                 item.title = "Update and Restart ⚠️"
