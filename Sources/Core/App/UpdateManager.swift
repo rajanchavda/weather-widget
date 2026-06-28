@@ -78,6 +78,9 @@ class UpdateManager {
     func performUpdateAndRestart(isSilent: Bool) {
         guard let button = appDelegate.statusItem?.button else { return }
 
+        let oldVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let bundlePath = Bundle.main.bundlePath
+
         if !isSilent {
             button.title = "🌤️ Updating..."
             if let menu = appDelegate.statusItem?.menu, menu.items.count > 1 {
@@ -132,19 +135,36 @@ class UpdateManager {
                 task.waitUntilExit()
 
                 if task.terminationStatus == 0 {
-                    if isSilent {
-                        DispatchQueue.main.async {
-                            self.appDelegate.isUpdateReady = true
-                            self.appDelegate.menuBarManager.updateStatusItem()
-                            if let menu = self.appDelegate.statusItem?.menu,
-                               let item = menu.items.first(where: { $0.action == #selector(AppDelegate.checkForUpdates) }) {
-                                item.title = "Update and Restart ⚠️"
-                                item.action = #selector(AppDelegate.triggerRelaunch)
+                    let infoPlistPath = "\(bundlePath)/Contents/Info.plist"
+                    let newVersion = (NSDictionary(contentsOfFile: infoPlistPath)?["CFBundleShortVersionString"] as? String) ?? oldVersion
+
+                    if newVersion != oldVersion {
+                        if isSilent {
+                            DispatchQueue.main.async {
+                                self.appDelegate.isUpdateReady = true
+                                self.appDelegate.menuBarManager.updateStatusItem()
+                                if let menu = self.appDelegate.statusItem?.menu,
+                                   let item = menu.items.first(where: { $0.action == #selector(AppDelegate.checkForUpdates) }) {
+                                    item.title = "Update and Restart ⚠️"
+                                    item.action = #selector(AppDelegate.triggerRelaunch)
+                                }
+                            }
+                        } else {
+                            DispatchQueue.main.async {
+                                self.relaunchApp()
                             }
                         }
                     } else {
-                        DispatchQueue.main.async {
-                            self.relaunchApp()
+                        print("[Update] brew exited 0 but version unchanged (\(oldVersion)). No update applied.")
+                        if !isSilent {
+                            DispatchQueue.main.async {
+                                let alert = NSAlert()
+                                alert.messageText = "Already Up to Date"
+                                alert.informativeText = "You are already running version \(oldVersion)."
+                                alert.alertStyle = .informational
+                                alert.addButton(withTitle: "OK")
+                                alert.runModal()
+                            }
                         }
                     }
                 } else {

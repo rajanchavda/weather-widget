@@ -22,7 +22,7 @@ class MenuBarManager {
         buildMenu(for: item)
     }
 
-    private func buildMenu(for statusItem: NSStatusItem) {
+    func buildMenu(for statusItem: NSStatusItem) {
         let menu = NSMenu()
 
         let titleItem = NSMenuItem(title: "Weather Menu Bar Overlay", action: nil, keyEquivalent: "")
@@ -112,6 +112,10 @@ class MenuBarManager {
         let updateItem = NSMenuItem(title: "Check for Updates", action: #selector(AppDelegate.checkForUpdates), keyEquivalent: "")
         updateItem.target = appDelegate
         menu.addItem(updateItem)
+
+        let aboutItem = NSMenuItem(title: "About Weather Overlay", action: #selector(AppDelegate.showAbout), keyEquivalent: "")
+        aboutItem.target = appDelegate
+        menu.addItem(aboutItem)
 
         let quitItem = NSMenuItem(title: "Quit Weather Overlay", action: #selector(AppDelegate.quitApp), keyEquivalent: "q")
         quitItem.target = appDelegate
