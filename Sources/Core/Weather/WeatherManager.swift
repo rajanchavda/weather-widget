@@ -36,9 +36,15 @@ class WeatherManager: ObservableObject {
         }()
     }
 
+#if swift(>=6.0)
     nonisolated deinit {
         pathMonitor.cancel()
     }
+#else
+    deinit {
+        pathMonitor.cancel()
+    }
+#endif
 
     func start() {
         fetchWeather()
