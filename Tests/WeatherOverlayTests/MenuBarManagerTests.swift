@@ -178,6 +178,45 @@ final class MenuBarManagerTests: XCTestCase {
         let title = appDelegate.statusItem?.button?.title ?? ""
         XCTAssertTrue(title.contains("50.0"))
     }
+
+    // MARK: - About Menu Item
+
+    func testAboutMenuItemExists() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        let aboutItem = menu.items.first(where: { $0.title == "About Weather Overlay" })
+        XCTAssertNotNil(aboutItem)
+    }
+
+    func testAboutMenuItemIsSecondToLast() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        let items = menu.items
+        let quitIndex = items.lastIndex(where: { $0.title == "Quit Weather Overlay" }) ?? -1
+        let aboutIndex = items.lastIndex(where: { $0.title == "About Weather Overlay" }) ?? -2
+
+        XCTAssertGreaterThan(quitIndex, 0)
+        XCTAssertEqual(aboutIndex, quitIndex - 1)
+    }
+
+    func testAboutMenuItemHasAction() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        let aboutItem = menu.items.first(where: { $0.title == "About Weather Overlay" })
+        XCTAssertNotNil(aboutItem?.action)
+        XCTAssertEqual(aboutItem?.action, #selector(AppDelegate.showAbout))
+    }
+
+    func testAboutMenuItemTargetIsAppDelegate() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        let aboutItem = menu.items.first(where: { $0.title == "About Weather Overlay" })
+        XCTAssertTrue(aboutItem?.target is AppDelegate)
+    }
 }
 
 @MainActor

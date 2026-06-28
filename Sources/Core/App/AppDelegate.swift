@@ -334,6 +334,17 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
 
+    @objc func showAbout() {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?.?.?"
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Weather Overlay"
+        alert.informativeText = "Version \(version)\n\nAmbient weather menu bar overlay for macOS."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     @objc func checkForUpdates() {
         updateManager.performUpdateCheck(isUserInitiated: true)
     }
