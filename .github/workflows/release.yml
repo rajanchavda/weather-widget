@@ -44,32 +44,36 @@ jobs:
           SHA256: ${{ steps.sha.outputs.value }}
         run: |
           git clone "https://x-access-token:${GH_TOKEN}@github.com/rajanchavda/homebrew-tap.git" /tmp/homebrew-tap
+
+          ruby -e "
+            version = ENV['VERSION']
+            sha256  = ENV['SHA256']
+            File.write('/tmp/homebrew-tap/Casks/weatheroverlay.rb', <<~CASK)
+              cask \"weatheroverlay\" do
+                version \"#{version}\"
+                sha256 \"#{sha256}\"
+
+                url \"https://github.com/rajanchavda/weather-widget/releases/download/v\#{version}/WeatherOverlay.zip\"
+                name \"WeatherOverlay\"
+                desc \"Ambient weather menu bar overlay for macOS\"
+                homepage \"https://github.com/rajanchavda/weather-widget\"
+
+                app \"WeatherOverlay.app\"
+
+                postflight do
+                  system_command \"xattr\",
+                                 args: [\"-cr\", \"\#{appdir}/WeatherOverlay.app\"]
+                end
+
+                livecheck do
+                  url :url
+                  strategy :github_latest
+                end
+              end
+            CASK
+          "
+
           cd /tmp/homebrew-tap
-
-          cat > Casks/weatheroverlay.rb <<CASK
-          cask "weatheroverlay" do
-            version "${VERSION}"
-            sha256 "${SHA256}"
-
-            url "https://github.com/rajanchavda/weather-widget/releases/download/v#{version}/WeatherOverlay.zip"
-            name "WeatherOverlay"
-            desc "Ambient weather menu bar overlay for macOS"
-            homepage "https://github.com/rajanchavda/weather-widget"
-
-            app "WeatherOverlay.app"
-
-            postflight do
-              system_command "xattr",
-                             args: ["-cr", "#{appdir}/WeatherOverlay.app"]
-            end
-
-            livecheck do
-              url :url
-              strategy :github_latest
-            end
-          end
-          CASK
-
           git add Casks/weatheroverlay.rb
-          git -c user.name="WeatherOverlay Bot" -c user.email="bot@weatheroverlay.app" commit -m "Update to v${VERSION}"
+          git -c user.name="WeatherOverlay Bot" -c user.email="bot@weatheroverlay.app" commit -m "Update to v${VERSION}" || echo "No changes to commit"
           git push
