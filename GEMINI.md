@@ -13,18 +13,28 @@ macOS menu bar weather app with real-time weather visualization using atmospheri
 
 ## Key Files Breakdown
 
-### `main.swift` - Application Entry Point (389 lines)
+### `Sources/main.swift` - Bootstrap Entry Point (6 lines)
+**Purpose**: Creates `AppDelegate` and runs the app
+
+### `Sources/App/AppDelegate.swift` - Application Controller (~187 lines)
 **Purpose**: Main controller, runs the app and manages system integration
 
 **Main Class**: `AppDelegate`
 - Sets app to run as accessory (no Dock icon)
-- Creates status bar item (shows weather emoji + temperature)
 - Creates overlay window (transparent, spans menu bar)
-- Builds dropdown menu with user controls
-- Subscribes to weather updates using Combine
-- Updates UI reactively when weather data changes
+- Hosts all `@objc` selectors for menu actions
+- Subscribes to WeatherManager + settings changes using `Publishers.Merge`
+- Manages login item registration
+- Delegates menu bar / status item to MenuBarManager
+- Delegates update checks to UpdateManager
 
-### `WeatherManager.swift` - Data Layer (195 lines)
+### `Sources/App/MenuBarManager.swift` - Status Bar + Menu (~214 lines)
+**Purpose**: Owns NSStatusItem, builds full NSMenu, handles state sync with WeatherManager + OverlaySettings
+
+### `Sources/App/UpdateManager.swift` - Update Checker (~214 lines)
+**Purpose**: Checks GitHub releases, runs Homebrew upgrade, relaunches app. Supports silent background updates.
+
+### `Sources/Weather/WeatherManager.swift` - Data Layer (227 lines)
 **Purpose**: Handles all weather data fetching and state management
 
 **Published Properties**:
@@ -44,17 +54,29 @@ macOS menu bar weather app with real-time weather visualization using atmospheri
 4. If all fails, use London as default location
 5. Auto-refresh every 5 minutes
 
-### `OverlayView.swift` - Visual Layer (~378 lines)
-**Purpose**: SwiftUI view hierarchy for all visual effects
+### `Sources/Weather/Models.swift` - API Types (75 lines)
+**Purpose**: Codable response types (GeoResponse, FreeGeoResponse, GeocodingResponse, WeatherResponse) and ManualLocation
 
-**Components**:
-1. `OverlaySettings` - User preferences (aurora, units, brightness, manual weather code override)
-2. `OverlayView` - Main view combining visual layers
-3. Aurora gradient - Weather-responsive colors
-4. `RainView` - Cinematic 3-layer rain animation with GPU Canvas rendering
-5. `SnowView` - Gentle snowfall animation
-6. Stars view - High-density twinkling stars for clear nights
-7. Temperature forecast line - Optional 12-hour graph
+### `Sources/Settings/OverlaySettings.swift` - User Preferences (72 lines)
+**Purpose**: ObservableObject with WeatherUnit, AuroraStyle enums, UserDefaults persistence
+
+### `Sources/Views/OverlayView.swift` - Composition Root (102 lines)
+**Purpose**: ZStack dispatching to sub-views based on weather conditions
+
+### `Sources/Utils/ColorHelpers.swift` - Color Functions (139 lines)
+**Purpose**: getTemperatureColor(), getAuroraColors() — centralized color logic
+
+### Visual Sub-views (Sources/Views/)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `AuroraBackground.swift` | 92 | Weather-responsive gradient with AnimationPhase modifier |
+| `RainView.swift` | 166 | Cinematic 3-layer rain with Canvas GPU rendering, lightning |
+| `SnowView.swift` | 54 | Gentle snowfall animation via Canvas |
+| `StarsView.swift` | 111 | High-density twinkling stars for clear nights |
+| `SunView.swift` | 25 | Sun emoji for clear day |
+| `CloudView.swift` | 23 | Cloud emoji for cloudy weather |
+| `FogView.swift` | 19 | Fog emoji for foggy weather |
+| `TemperatureLineView.swift` | 37 | Optional 12-hour temperature forecast graph |
 
 **View Hierarchy**:
 ```
@@ -107,17 +129,17 @@ window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 ## State Management Pattern
 
 ### Architecture: Combine + SwiftUI
-1. **WeatherManager** publishes changes via `@Published` properties
-2. **AppDelegate** subscribes using Combine publishers
+1. **WeatherManager** + **OverlaySettings** publish changes via `objectWillChange`
+2. **AppDelegate** subscribes using `Publishers.Merge(objectWillChange:)`
 3. **OverlayView** observes via `@ObservedObject`
 
 **Flow Example**:
 ```
-Weather API → WeatherManager.currentTemp = 25.0
-                     ↓ (@Published)
+Weather API → WeatherManager updates @Published property
+                     ↓ (objectWillChange)
               AppDelegate receives update
-                     ↓ (Combine sink)
-              Updates status bar text
+                     ↓ (Publishers.Merge sink)
+              menuBarManager.updateStatusItem()
                      ↓
               OverlayView observes weatherManager
                      ↓ (@ObservedObject)
@@ -225,33 +247,61 @@ Well-named functions/variables are self-documenting. Comments only when non-obvi
 - Defines executable target
 - macOS 13.0+ platform requirement
 
-### `main.swift` (396 lines)
-- `AppDelegate` class (app lifecycle)
-- Status bar item management
-- Menu creation and actions (aurora toggle, brightness, unit selection, aurora preview, reset)
-- Overlay window setup
-- Combine subscriptions
-- Day/night detection for moon/sun emoji (6 PM - 6 AM)
+### `Sources/main.swift` (6 lines)
+- Bootstrap entry point
+- Creates AppDelegate, NSApplication, runs app
 
-### `WeatherManager.swift` (195 lines)
+### `Sources/App/AppDelegate.swift` (~187 lines)
+- App lifecycle + overlay window setup
+- @objc menu action routing
+- Publishers.Merge subscription for reactive updates
+- Login item registration
+
+### `Sources/App/MenuBarManager.swift` (~214 lines)
+- NSStatusItem lifecycle
+- Full NSMenu construction (aurora toggle, brightness, units, aurora preview, reset)
+- State sync with WeatherManager + OverlaySettings
+
+### `Sources/App/UpdateManager.swift` (~214 lines)
+- GitHub release checking
+- Homebrew upgrade execution
+- Silent background updates + relaunch
+
+### `Sources/Weather/WeatherManager.swift` (~227 lines)
 - Weather data fetching
 - IP geolocation with fallback
 - State management (`@Published`)
 - 5-minute auto-refresh
+- Stale fetch guard (fetchGeneration)
 
-### `OverlayView.swift` (378 lines)
-- `OverlaySettings` class (preferences + manual weather override)
-- `OverlayView` main view
-- Aurora color mapping
-- `RainView` struct (3-layer rain with lightning using TimelineView + Canvas)
-- `SnowView` struct (snowfall animation)
-- Stars generation (high-density twinkling)
-- Temperature forecast graph
+### `Sources/Weather/Models.swift` (~75 lines)
+- Codable API response types
+- ManualLocation struct
+
+### `Sources/Settings/OverlaySettings.swift` (~72 lines)
+- User preferences (aurora toggle, forecast line, units, brightness, manual weather override)
+- UserDefaults persistence
+
+### `Sources/Views/OverlayView.swift` (~102 lines)
+- ZStack composition root
+- Dispatches to sub-views based on weather
+
+### `Sources/Utils/ColorHelpers.swift` (~139 lines)
+- Aurora color mapping (getAuroraColors)
+- Temperature color gradient (getTemperatureColor)
+
+### Visual Sub-views
+- `RainView.swift` (~166 lines) — 3-layer rain with lightning using TimelineView + Canvas
+- `SnowView.swift` (~54 lines) — Snowfall animation
+- `StarsView.swift` (~111 lines) — High-density twinkling stars
+- `AuroraBackground.swift` (~92 lines) — Weather-responsive gradient
+- `SunView.swift`, `CloudView.swift`, `FogView.swift` (~25, 23, 19 lines) — Weather emoji overlays
+- `TemperatureLineView.swift` (~37 lines) — Temperature forecast graph
 
 ---
 
 **Document Purpose**: Context for AI assistants to understand project structure and implementation.
 
-**Last Updated**: 2026-06-21  
-**Project Status**: Clean, functional  
+**Last Updated**: 2026-06-28  
+**Project Status**: Refactored into modular single-responsibility components  
 **Complexity Level**: Beginner-Intermediate (SwiftUI + Combine + AppKit)

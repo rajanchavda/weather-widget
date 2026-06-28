@@ -12,7 +12,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "WeatherOverlay",
-            path: "Sources"
+            path: "Sources",
+            exclude: ["screenshots"]
         )
     ]
 )

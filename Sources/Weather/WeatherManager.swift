@@ -14,17 +14,12 @@ class WeatherManager: ObservableObject {
     @Published var lastUpdated: Date? = nil
     @Published var hasData: Bool = false
     @Published var errorMessage: String? = nil
-    
+
     private var timer: AnyCancellable?
     private var fetchGeneration: Int = 0
-    // pathMonitor and lastPathStatus are accessed only from the serial network-monitor
-    // queue (and pathMonitor.cancel() from deinit, which is thread-safe on NWPathMonitor),
-    // so we opt out of actor isolation for them.
     private let pathMonitor = NWPathMonitor()
     nonisolated(unsafe) private var lastPathStatus: NWPath.Status = .satisfied
 
-    /// User-specified manual location override. When non-nil, the app skips IP geolocation
-    /// and uses these coordinates directly. Persisted across launches via UserDefaults.
     var manualLocation: ManualLocation? {
         get { ManualLocation.load() }
         set { ManualLocation.save(newValue) }
@@ -36,34 +31,26 @@ class WeatherManager: ObservableObject {
         config.timeoutIntervalForResource = 5.0
         return URLSession(configuration: config)
     }()
-    
-    init() {
-        // No-op: Call start() after application has finished launching
-    }
-    
+
+    init() {}
+
     nonisolated deinit {
         pathMonitor.cancel()
     }
-    
+
     func start() {
-        // Start the initial fetch
         fetchWeather()
-        
-        // Setup timer to refresh every 5 minutes (300 seconds)
+
         timer = Timer.publish(every: 300, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.fetchWeather()
             }
-            
-        // Start monitoring network path changes
+
         setupNetworkMonitoring()
     }
-    
+
     private func setupNetworkMonitoring() {
-        // pathUpdateHandler is invoked serially on the monitor's own queue, so
-        // computing the transition synchronously here is race-free. We only hop
-        // to the main actor to trigger the fetch.
         pathMonitor.pathUpdateHandler = { [weak self] path in
             guard let self = self else { return }
             let status = path.status
@@ -79,22 +66,18 @@ class WeatherManager: ObservableObject {
         }
         pathMonitor.start(queue: DispatchQueue.global(qos: .background))
     }
-    
+
     func fetchWeather() {
         print("[WeatherManager] fetchWeather() invoked. isFetching=\(isFetching)")
-        // Bump the generation so any in-flight prior Task's results are ignored when
-        // they land — prevents a slow stale fetch from clobbering newer state
-        // (e.g. London response arriving after a user switched to Mumbai).
         fetchGeneration &+= 1
         let generation = fetchGeneration
         isFetching = true
-        self.errorMessage = nil
+        errorMessage = nil
 
         print("[WeatherManager] Spawning background fetch task (gen=\(generation))...")
         Task {
             print("[WeatherManager] Background fetch task started.")
             do {
-                // 1. Resolve coordinates: manual override (if set) → IP geolocation
                 let lat: Double
                 let lon: Double
                 let city: String
@@ -111,13 +94,11 @@ class WeatherManager: ObservableObject {
                     city = location.city ?? "My Location"
                     print("[WeatherManager] Geolocation success: \(city) (\(lat), \(lon))")
                 }
-                
-                // 2. Fetch Weather from Open-Meteo
+
                 print("[WeatherManager] Fetching weather forecast data...")
                 let weather = try await fetchWeatherData(lat: lat, lon: lon)
                 print("[WeatherManager] Weather data fetched. Temp=\(weather.current.temperature_2m)°C, WMO Code=\(weather.current.weather_code)")
-                
-                // 3. Update published state (inherits @MainActor from enclosing class)
+
                 guard generation == self.fetchGeneration else {
                     print("[WeatherManager] Discarding stale success result (gen=\(generation), current=\(self.fetchGeneration))")
                     return
@@ -167,10 +148,9 @@ class WeatherManager: ObservableObject {
             }
         }
     }
-    
+
     private func fetchLocation() async throws -> GeoResponse {
         do {
-            // Try FreeIPAPI first (generous rate limits, HTTPS)
             guard let url = URL(string: "https://freeipapi.com/api/json") else {
                 throw URLError(.badURL)
             }
@@ -180,7 +160,6 @@ class WeatherManager: ObservableObject {
         } catch {
             print("Primary geolocator failed: \(error.localizedDescription). Trying secondary...")
 
-            // Fallback to ipapi.co
             guard let url = URL(string: "https://ipapi.co/json/") else {
                 throw URLError(.badURL)
             }
@@ -192,7 +171,6 @@ class WeatherManager: ObservableObject {
         }
     }
 
-    /// Search Open-Meteo's free geocoding API for a city by name. Returns the top match.
     nonisolated func searchCity(_ query: String) async throws -> ManualLocation? {
         guard var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search") else {
             throw URLError(.badURL)
@@ -225,89 +203,24 @@ class WeatherManager: ObservableObject {
         }()
         return ManualLocation(name: displayName, latitude: first.latitude, longitude: first.longitude)
     }
-    
+
     private func fetchWeatherData(lat: Double, lon: Double) async throws -> WeatherResponse {
         let posixLocale = Locale(identifier: "en_US_POSIX")
         let latStr = String(format: "%.6f", locale: posixLocale, lat)
         let lonStr = String(format: "%.6f", locale: posixLocale, lon)
-        
+
         let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(latStr)&longitude=\(lonStr)&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code&forecast_days=1"
-        
+
         guard let url = URL(string: urlString) else {
             throw URLError(.badURL)
         }
-        
+
         let (data, response) = try await session.data(from: url)
-        
+
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
-        
+
         return try JSONDecoder().decode(WeatherResponse.self, from: data)
-    }
-}
-
-// MARK: - Manual Location Override
-
-struct ManualLocation: Codable, Equatable {
-    let name: String
-    let latitude: Double
-    let longitude: Double
-
-    private static let defaultsKey = "WeatherOverlay.manualLocation"
-
-    static func load() -> ManualLocation? {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey) else { return nil }
-        return try? JSONDecoder().decode(ManualLocation.self, from: data)
-    }
-
-    static func save(_ value: ManualLocation?) {
-        let defaults = UserDefaults.standard
-        if let value = value, let data = try? JSONEncoder().encode(value) {
-            defaults.set(data, forKey: defaultsKey)
-        } else {
-            defaults.removeObject(forKey: defaultsKey)
-        }
-    }
-}
-
-// JSON Structures for Decoding
-struct GeoResponse: Codable {
-    let latitude: Double
-    let longitude: Double
-    let city: String?
-}
-
-struct FreeGeoResponse: Codable {
-    let latitude: Double
-    let longitude: Double
-    let cityName: String?
-}
-
-struct GeocodingResponse: Codable {
-    let results: [Result]?
-    struct Result: Codable {
-        let name: String
-        let latitude: Double
-        let longitude: Double
-        let country: String?
-        let admin1: String?
-    }
-}
-
-struct WeatherResponse: Codable {
-    let current: CurrentWeather
-    let hourly: HourlyWeather
-    
-    struct CurrentWeather: Codable {
-        let temperature_2m: Double
-        let weather_code: Int
-        let is_day: Int
-    }
-    
-    struct HourlyWeather: Codable {
-        let time: [String]
-        let temperature_2m: [Double]
-        let weather_code: [Int]
     }
 }

@@ -254,19 +254,23 @@ This gives you a quick visual glance at whether temperatures are rising, falling
 
 ### Core Components
 
-- **AppDelegate** (`main.swift`) - App lifecycle, status bar, overlay window management
-- **WeatherManager** (`WeatherManager.swift`) - Weather data fetching, geolocation, state management
-- **OverlayView** (`OverlayView.swift`) - SwiftUI visual layer with aurora gradients, stars, and forecast line
+- **AppDelegate** (`Sources/App/AppDelegate.swift`) - App lifecycle, overlay window, `@objc` action routing
+- **MenuBarManager** (`Sources/App/MenuBarManager.swift`) - NSStatusItem + NSMenu construction and state sync
+- **UpdateManager** (`Sources/App/UpdateManager.swift`) - GitHub release checking, Homebrew upgrade, relaunch
+- **WeatherManager** (`Sources/Weather/WeatherManager.swift`) - Weather data fetching, geolocation, Combine state
+- **OverlayView** (`Sources/Views/OverlayView.swift`) - ZStack composition root dispatching to sub-views
 
 ### Visual Layers (Z-index bottom to top)
 
-1. **Aurora Background** - Weather-responsive color gradient
-2. **Twinkling Stars** - Clear night sky only (deterministic positions)
-3. **Temperature Forecast Line** - 12-hour graph at bottom (optional)
+1. **Aurora Background** - Weather-responsive color gradient (`AuroraBackground.swift`)
+2. **Twinkling Stars** - Clear night sky only (`StarsView.swift`)
+3. **Animated Weather** - Rain 3-layer depth + lightning (`RainView.swift`), Snow (`SnowView.swift`)
+4. **Weather Emoji** - Sun, Cloud, Fog overlays (`SunView.swift`, `CloudView.swift`, `FogView.swift`)
+5. **Temperature Forecast Line** - 12-hour graph at bottom (optional, `TemperatureLineView.swift`)
 
 ### State Management
-- **Pattern**: Combine publishers + SwiftUI `@ObservedObject`
-- **Flow**: WeatherManager (@Published) → AppDelegate (Combine sink) → OverlayView (@ObservedObject)
+- **Pattern**: Combine + SwiftUI `@ObservedObject`
+- **Flow**: WeatherManager + OverlaySettings (`objectWillChange`) → AppDelegate (`Publishers.Merge`) → MenuBarManager (`updateStatusItem()`)
 - **Thread Safety**: All UI updates on main thread
 
 ## 🔧 Technical Details
@@ -301,11 +305,30 @@ Contributions are welcome! Here's how you can help:
 
 ```
 WeatherOverlay/
-├── Package.swift
+├── Package.swift                  # SPM manifest
 └── Sources/
-    ├── main.swift              # AppDelegate + entry point
-    ├── OverlayView.swift       # SwiftUI views
-    └── WeatherManager.swift    # Weather data layer
+    ├── main.swift                 # Bootstrap entry point
+    ├── App/
+    │   ├── AppDelegate.swift      # Lifecycle, overlay window, @objc actions
+    │   ├── MenuBarManager.swift   # Status item + NSMenu
+    │   └── UpdateManager.swift    # GitHub updates + Homebrew + relaunch
+    ├── Weather/
+    │   ├── WeatherManager.swift   # Data fetching + state management
+    │   └── Models.swift           # API response types
+    ├── Settings/
+    │   └── OverlaySettings.swift  # User preferences
+    ├── Views/
+    │   ├── OverlayView.swift      # Composition root
+    │   ├── AuroraBackground.swift # Weather gradient
+    │   ├── StarsView.swift        # Twinkling night stars
+    │   ├── RainView.swift         # 3-layer rain + lightning
+    │   ├── SnowView.swift         # Snowfall animation
+    │   ├── SunView.swift          # Day emoji
+    │   ├── CloudView.swift        # Cloud emoji
+    │   ├── FogView.swift          # Fog emoji
+    │   └── TemperatureLineView.swift # 12-hour forecast graph
+    └── Utils/
+        └── ColorHelpers.swift     # Color functions
 ```
 
 ## License
