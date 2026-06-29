@@ -187,11 +187,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
 
-        let menuBarHeight = screenFrame.height - visibleFrame.maxY
+        let menuBarHeight = max(screenFrame.height - visibleFrame.maxY, NSStatusBar.system.thickness)
 
         return NSRect(
             x: screenFrame.origin.x,
-            y: screenFrame.origin.y + visibleFrame.maxY,
+            y: screenFrame.origin.y + screenFrame.height - menuBarHeight,
             width: screenFrame.width,
             height: menuBarHeight
         )
