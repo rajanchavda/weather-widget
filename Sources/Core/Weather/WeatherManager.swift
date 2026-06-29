@@ -138,7 +138,7 @@ class WeatherManager: ObservableObject {
                     self.weatherCode = weather.current.weather_code
                     self.hourlyTemps = Array(weather.hourly.temperature_2m.prefix(12))
                     self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
-                    self.isNight = weather.current.is_day == 0
+                    self.isNight = computeIsNightLocally()
                     self.lastUpdated = Date()
                     self.hasData = true
                     self.errorMessage = nil
@@ -150,6 +150,7 @@ class WeatherManager: ObservableObject {
                         print("[WeatherManager] Discarding stale error (gen=\(generation), current=\(self.fetchGeneration))")
                         return
                     }
+                    self.isNight = computeIsNightLocally()
                     self.errorMessage = "Fetch Failed: \(primaryErrStr) (Fallback failed: \(error.localizedDescription))"
                     self.isFetching = false
                 }
@@ -210,6 +211,11 @@ class WeatherManager: ObservableObject {
             return first.name
         }()
         return ManualLocation(name: displayName, latitude: first.latitude, longitude: first.longitude)
+    }
+
+    private func computeIsNightLocally() -> Bool {
+        let hour = Calendar.current.component(.hour, from: Date())
+        return hour < 6 || hour >= 20
     }
 
     private func fetchWeatherData(lat: Double, lon: Double) async throws -> WeatherResponse {
