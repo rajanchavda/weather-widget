@@ -2,6 +2,7 @@ import Cocoa
 import SwiftUI
 import Combine
 import ServiceManagement
+import IOKit.ps
 
 @MainActor
 public class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,7 +13,9 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     let weatherManager = WeatherManager()
     let settings = OverlaySettings()
     var isUpdateReady = false
+    var userDisabledEco = false
     private var cancellables = Set<AnyCancellable>()
+    private var batteryCheckTimer: Timer?
 
     var menuBarManager: MenuBarManager!
     var updateManager: UpdateManager!
@@ -25,6 +28,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     deinit {
+        batteryCheckTimer?.invalidate()
         DistributedNotificationCenter.default().removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         NotificationCenter.default.removeObserver(self)
@@ -106,6 +110,8 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
         print("[AppDelegate] Starting the Weather Engine...")
         weatherManager.start()
+
+        setupPowerMonitoring()
 
         performUpdateCheck(isUserInitiated: false)
     }
@@ -254,6 +260,66 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    // MARK: - Power / Eco Mode
+
+    private func setupPowerMonitoring() {
+        batteryCheckTimer?.invalidate()
+        batteryCheckTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.checkBatteryAndUpdateEcoMode()
+            }
+        }
+        checkBatteryAndUpdateEcoMode()
+    }
+
+    private func checkBatteryAndUpdateEcoMode() {
+        let (onBattery, percent) = getBatteryState()
+
+        if !onBattery || percent > 20 {
+            userDisabledEco = false
+        }
+
+        if onBattery && percent <= 20 && !userDisabledEco {
+            if !settings.ecoMode {
+                print("[AppDelegate] Battery \(percent)% — auto-enabling Eco Mode")
+                settings.ecoMode = true
+                settings.brightness = 0.75
+            }
+        }
+    }
+
+    private func getBatteryState() -> (onBattery: Bool, percent: Int) {
+        guard let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
+            return (false, 100)
+        }
+        guard let sources = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [[String: Any]] else {
+            return (false, 100)
+        }
+        guard let ps = sources.first else {
+            return (false, 100)
+        }
+        let onBattery = (ps[kIOPSPowerSourceStateKey] as? String) == kIOPSBatteryPowerValue
+        let capacity = ps[kIOPSMaxCapacityKey] as? Int ?? 100
+        let current = ps[kIOPSCurrentCapacityKey] as? Int ?? 100
+        let percent = capacity > 0 ? (current * 100 / capacity) : 100
+        return (onBattery, percent)
+    }
+
+    @objc func toggleEcoMode() {
+        settings.ecoMode.toggle()
+        if settings.ecoMode {
+            userDisabledEco = false
+            settings.brightness = 0.75
+        } else {
+            userDisabledEco = true
+        }
+        if let item = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleEcoMode) }) {
+            item.state = settings.ecoMode ? .on : .off
+        }
+        menuBarManager.syncBrightnessSubmenu()
+        menuBarManager.updateStatusItem()
+    }
+
     // MARK: - Menu Selectors
 
     @objc func toggleAurora() {
@@ -317,6 +383,8 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         settings.brightness = 1.0
         settings.manualWeatherCode = nil
         settings.manualIsNight = nil
+        settings.ecoMode = false
+        userDisabledEco = false
 
         menuBarManager.syncMenuStates()
         menuBarManager.updateStatusItem()
