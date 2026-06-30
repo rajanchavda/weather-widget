@@ -283,7 +283,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             if !settings.ecoMode {
                 print("[AppDelegate] Battery \(percent)% — auto-enabling Eco Mode")
                 settings.ecoMode = true
-                settings.brightness = 0.75
+                settings.brightness = 0.50
             }
         }
     }
@@ -309,7 +309,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         settings.ecoMode.toggle()
         if settings.ecoMode {
             userDisabledEco = false
-            settings.brightness = 0.75
+            settings.brightness = 0.50
         } else {
             userDisabledEco = true
         }
