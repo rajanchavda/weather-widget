@@ -152,7 +152,10 @@ class MenuBarManager {
         let title: String
         let locationTitle: String
 
-        if let error = error {
+        if weatherManager.isPaused {
+            title = "💤"
+            locationTitle = "Location: Paused (display asleep)"
+        } else if let error = error {
             title = "⚠️ Err"
             locationTitle = "Error: \(error)"
         } else if !hasData {
