@@ -39,8 +39,8 @@ struct SunView: View {
             path.move(to: center)
 
             let rayLength: CGFloat = 35.0
-            let angle1 = rotation - 0.05
-            let angle2 = rotation + 0.05
+            let angle1 = CGFloat(rotation - 0.05)
+            let angle2 = CGFloat(rotation + 0.05)
 
             path.addLine(to: CGPoint(x: center.x + cos(angle1) * rayLength, y: center.y + sin(angle1) * rayLength))
             path.addLine(to: CGPoint(x: center.x + cos(angle2) * rayLength, y: center.y + sin(angle2) * rayLength))
