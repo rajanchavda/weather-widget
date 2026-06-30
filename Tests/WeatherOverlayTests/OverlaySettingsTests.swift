@@ -72,9 +72,38 @@ final class OverlaySettingsTests: XCTestCase {
         XCTAssertNil(settings.manualIsNight)
     }
 
+    func testDisplayMode_default() {
+        XCTAssertEqual(settings.displayMode, .iconAndTemp)
+    }
+
+    func testDisplayMode_allCases() {
+        let all = OverlaySettings.StatusBarDisplayMode.allCases
+        XCTAssertEqual(all.count, 3)
+        XCTAssertTrue(all.contains(.iconAndTemp))
+        XCTAssertTrue(all.contains(.iconOnly))
+        XCTAssertTrue(all.contains(.tempOnly))
+    }
+
+    func testDisplayMode_rawValues() {
+        XCTAssertEqual(OverlaySettings.StatusBarDisplayMode.iconAndTemp.rawValue, "Icon + Temperature")
+        XCTAssertEqual(OverlaySettings.StatusBarDisplayMode.iconOnly.rawValue, "Icon Only")
+        XCTAssertEqual(OverlaySettings.StatusBarDisplayMode.tempOnly.rawValue, "Temperature Only")
+    }
+
+    func testSetDisplayMode() {
+        settings.displayMode = .iconOnly
+        XCTAssertEqual(settings.displayMode, .iconOnly)
+
+        settings.displayMode = .tempOnly
+        XCTAssertEqual(settings.displayMode, .tempOnly)
+
+        settings.displayMode = .iconAndTemp
+        XCTAssertEqual(settings.displayMode, .iconAndTemp)
+    }
+
     func testPublisherEmitsOnChange() {
         let expectation = expectation(description: "objectWillChange publishes")
-        expectation.expectedFulfillmentCount = 3
+        expectation.expectedFulfillmentCount = 4
 
         settings.objectWillChange
             .sink { _ in expectation.fulfill() }
@@ -83,6 +112,7 @@ final class OverlaySettingsTests: XCTestCase {
         settings.showAurora.toggle()
         settings.showBottomLine.toggle()
         settings.selectedUnit = .fahrenheit
+        settings.displayMode = .iconOnly
 
         wait(for: [expectation], timeout: 0.5)
     }

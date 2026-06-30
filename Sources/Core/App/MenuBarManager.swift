@@ -65,6 +65,18 @@ class MenuBarManager {
         unitItem.submenu = unitMenu
         menu.addItem(unitItem)
 
+        let displayModeMenu = NSMenu()
+        for mode in OverlaySettings.StatusBarDisplayMode.allCases {
+            let item = NSMenuItem(title: mode.rawValue, action: #selector(AppDelegate.setDisplayMode(_:)), keyEquivalent: "")
+            item.target = appDelegate
+            item.representedObject = mode
+            item.state = settings.displayMode == mode ? .on : .off
+            displayModeMenu.addItem(item)
+        }
+        let displayModeItem = NSMenuItem(title: "Status Bar Display", action: nil, keyEquivalent: "")
+        displayModeItem.submenu = displayModeMenu
+        menu.addItem(displayModeItem)
+
         let brightnessMenu = NSMenu()
         let brightnessLevels: [(String, Double)] = [
             ("100%", 1.0), ("75%", 0.75), ("50%", 0.5), ("25%", 0.25)
@@ -154,7 +166,7 @@ class MenuBarManager {
             } else {
                 displayedTemp = temp
             }
-            title = String(format: "%@ %.1f%@", emoji, displayedTemp, settings.selectedUnit.rawValue)
+            title = buildStatusTitle(emoji: emoji, displayedTemp: displayedTemp)
             locationTitle = "Location: \(city)"
         }
 
@@ -182,6 +194,17 @@ class MenuBarManager {
         case 85...86: return "🌨️"
         case 95...99: return "⛈️"
         default: return "🌤️"
+        }
+    }
+
+    private func buildStatusTitle(emoji: String, displayedTemp: Double) -> String {
+        switch settings.displayMode {
+        case .iconAndTemp:
+            return String(format: "%@ %.1f%@", emoji, displayedTemp, settings.selectedUnit.rawValue)
+        case .iconOnly:
+            return emoji
+        case .tempOnly:
+            return String(format: "%.1f%@", displayedTemp, settings.selectedUnit.rawValue)
         }
     }
 
@@ -250,6 +273,8 @@ class MenuBarManager {
                 }
             }
         }
+
+        syncDisplayModeSubmenu()
     }
 
     func syncUnitSubmenu() {
@@ -283,6 +308,19 @@ class MenuBarManager {
                 for styleItem in submenu.items {
                     if let style = styleItem.representedObject as? OverlaySettings.AuroraStyle {
                         styleItem.state = isStyleSelected(style) ? .on : .off
+                    }
+                }
+            }
+        }
+    }
+
+    func syncDisplayModeSubmenu() {
+        guard let menu = appDelegate.statusItem?.menu else { return }
+        for item in menu.items where item.title == "Status Bar Display" {
+            if let submenu = item.submenu {
+                for modeItem in submenu.items {
+                    if let mode = modeItem.representedObject as? OverlaySettings.StatusBarDisplayMode {
+                        modeItem.state = mode == settings.displayMode ? .on : .off
                     }
                 }
             }
