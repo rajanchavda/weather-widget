@@ -221,6 +221,14 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func setDisplayMode(_ sender: NSMenuItem) {
+        if let mode = sender.representedObject as? OverlaySettings.StatusBarDisplayMode {
+            settings.displayMode = mode
+            menuBarManager.syncDisplayModeSubmenu()
+            menuBarManager.updateStatusItem()
+        }
+    }
+
     @objc func setBrightness(_ sender: NSMenuItem) {
         if let brightness = sender.representedObject as? Double {
             settings.brightness = brightness
@@ -248,6 +256,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         settings.showAurora = true
         settings.showBottomLine = false
         settings.selectedUnit = .celsius
+        settings.displayMode = .iconAndTemp
         settings.brightness = 1.0
         settings.manualWeatherCode = nil
         settings.manualIsNight = nil

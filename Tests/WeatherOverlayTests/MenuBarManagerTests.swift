@@ -138,6 +138,72 @@ final class MenuBarManagerTests: XCTestCase {
         XCTAssertTrue(title.contains("⚠️"))
     }
 
+    // MARK: - Display Mode
+
+    func testStatusItemText_iconOnly() {
+        settings.displayMode = .iconOnly
+
+        menuBarManager.updateStatusItem(temp: 22.0, code: 0, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("☀️"))
+        XCTAssertFalse(title.contains("22.0"))
+        XCTAssertFalse(title.contains("°C"))
+    }
+
+    func testStatusItemText_tempOnly() {
+        settings.displayMode = .tempOnly
+
+        menuBarManager.updateStatusItem(temp: 22.0, code: 0, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("22.0"))
+        XCTAssertTrue(title.contains("°C"))
+        XCTAssertFalse(title.contains("☀️"))
+    }
+
+    func testStatusItemText_iconOnly_updateReady() {
+        settings.displayMode = .iconOnly
+        appDelegate.isUpdateReady = true
+
+        menuBarManager.updateStatusItem(temp: 15.0, code: 0, city: "Paris", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("☀️"))
+        XCTAssertTrue(title.contains("⚠️"))
+        XCTAssertFalse(title.contains("15.0"))
+    }
+
+    func testStatusItemText_tempOnly_updateReady() {
+        settings.displayMode = .tempOnly
+        appDelegate.isUpdateReady = true
+
+        menuBarManager.updateStatusItem(temp: 10.0, code: 3, city: "Berlin", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("10.0"))
+        XCTAssertTrue(title.contains("⚠️"))
+        XCTAssertFalse(title.contains("☁️"))
+    }
+
+    func testStatusItemText_errorState_iconOnly() {
+        settings.displayMode = .iconOnly
+
+        menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: "Network error")
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertEqual(title, "⚠️ Err")
+    }
+
+    func testStatusItemText_noData_tempOnly() {
+        settings.displayMode = .tempOnly
+
+        menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertEqual(title, "🌤️ --")
+    }
+
     // MARK: - Location Title
 
     func testLocationTitleUpdate() {

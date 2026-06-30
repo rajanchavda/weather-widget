@@ -7,6 +7,13 @@ class OverlaySettings: ObservableObject {
     @Published var brightness: Double = 1.0
     @Published var manualWeatherCode: Int? = nil
     @Published var manualIsNight: Bool? = nil
+    @Published var displayMode: StatusBarDisplayMode = .iconAndTemp
+
+    enum StatusBarDisplayMode: String, CaseIterable {
+        case iconAndTemp = "Icon + Temperature"
+        case iconOnly = "Icon Only"
+        case tempOnly = "Temperature Only"
+    }
 
     enum WeatherUnit: String, CaseIterable {
         case celsius = "°C"
