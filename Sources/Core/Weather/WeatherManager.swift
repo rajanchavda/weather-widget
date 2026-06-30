@@ -14,6 +14,7 @@ class WeatherManager: ObservableObject {
     @Published var lastUpdated: Date? = nil
     @Published var hasData: Bool = false
     @Published var errorMessage: String? = nil
+    @Published var isPaused: Bool = false
 
     private var timer: AnyCancellable?
     private var fetchGeneration: Int = 0
@@ -47,15 +48,34 @@ class WeatherManager: ObservableObject {
 #endif
 
     func start() {
+        isPaused = false
         fetchWeather()
+        startTimer()
+        setupNetworkMonitoring()
+    }
 
+    func pause() {
+        guard !isPaused else { return }
+        isPaused = true
+        print("[WeatherManager] Paused — cancelling timer.")
+        timer?.cancel()
+        timer = nil
+    }
+
+    func resume() {
+        guard isPaused else { return }
+        isPaused = false
+        print("[WeatherManager] Resumed — restarting timer and refreshing.")
+        fetchWeather()
+        startTimer()
+    }
+
+    private func startTimer() {
         timer = Timer.publish(every: 300, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.fetchWeather()
             }
-
-        setupNetworkMonitoring()
     }
 
     private func setupNetworkMonitoring() {
@@ -76,6 +96,10 @@ class WeatherManager: ObservableObject {
     }
 
     func fetchWeather() {
+        if isPaused {
+            print("[WeatherManager] fetchWeather() skipped — paused.")
+            return
+        }
         print("[WeatherManager] fetchWeather() invoked. isFetching=\(isFetching)")
         fetchGeneration &+= 1
         let generation = fetchGeneration
