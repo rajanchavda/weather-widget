@@ -8,6 +8,8 @@ class WeatherManager: ObservableObject {
     @Published var weatherCode: Int = 0
     @Published var hourlyTemps: [Double] = []
     @Published var hourlyCodes: [Int] = []
+    @Published var hourlyTimes: [String] = []
+    @Published var hourlyPrecipitation: [Double] = []
     @Published var cityName: String = "Detecting..."
     @Published var isNight: Bool = false
     @Published var isFetching: Bool = false
@@ -139,6 +141,8 @@ class WeatherManager: ObservableObject {
                 self.weatherCode = weather.current.weather_code
                 self.hourlyTemps = Array(weather.hourly.temperature_2m.prefix(12))
                 self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
+                self.hourlyTimes = Array(weather.hourly.time.prefix(12))
+                self.hourlyPrecipitation = Array((weather.hourly.precipitation ?? []).prefix(12))
                 self.cityName = city
                 self.isNight = weather.current.is_day == 0
                 self.lastUpdated = Date()
@@ -162,6 +166,8 @@ class WeatherManager: ObservableObject {
                     self.weatherCode = weather.current.weather_code
                     self.hourlyTemps = Array(weather.hourly.temperature_2m.prefix(12))
                     self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
+                    self.hourlyTimes = Array(weather.hourly.time.prefix(12))
+                    self.hourlyPrecipitation = Array((weather.hourly.precipitation ?? []).prefix(12))
                     self.isNight = computeIsNightLocally()
                     self.lastUpdated = Date()
                     self.hasData = true
@@ -247,7 +253,7 @@ class WeatherManager: ObservableObject {
         let latStr = String(format: "%.6f", locale: posixLocale, lat)
         let lonStr = String(format: "%.6f", locale: posixLocale, lon)
 
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(latStr)&longitude=\(lonStr)&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code&forecast_days=1"
+        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(latStr)&longitude=\(lonStr)&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code,precipitation&forecast_days=1&timezone=auto"
 
         guard let url = URL(string: urlString) else {
             throw URLError(.badURL)
