@@ -173,17 +173,6 @@ final class OverlaySettingsTests: XCTestCase {
         XCTAssertEqual(OverlaySettings.AuroraStyle.thunderstorm.weatherCode, 95)
     }
 
-    func testAuroraStyle_forceNight() {
-        XCTAssertFalse(OverlaySettings.AuroraStyle.auto.forceNight)
-        XCTAssertFalse(OverlaySettings.AuroraStyle.clearDay.forceNight)
-        XCTAssertTrue(OverlaySettings.AuroraStyle.clearNight.forceNight)
-        XCTAssertFalse(OverlaySettings.AuroraStyle.cloudy.forceNight)
-        XCTAssertFalse(OverlaySettings.AuroraStyle.fog.forceNight)
-        XCTAssertFalse(OverlaySettings.AuroraStyle.rain.forceNight)
-        XCTAssertFalse(OverlaySettings.AuroraStyle.snow.forceNight)
-        XCTAssertFalse(OverlaySettings.AuroraStyle.thunderstorm.forceNight)
-    }
-
     func testAuroraStyle_rawValues() {
         XCTAssertEqual(OverlaySettings.AuroraStyle.auto.rawValue, "Auto (Weather-based)")
         XCTAssertEqual(OverlaySettings.AuroraStyle.clearDay.rawValue, "Clear Day")

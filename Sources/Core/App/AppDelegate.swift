@@ -19,8 +19,10 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
     var menuBarManager: MenuBarManager!
     var updateManager: UpdateManager!
+    var notificationManager: NotificationManager!
 
     public override init() {
+        self.notificationManager = NotificationManager(weatherManager: weatherManager, settings: settings)
         super.init()
         AppDelegate.shared = self
         self.menuBarManager = MenuBarManager(appDelegate: self, weatherManager: weatherManager, settings: settings)
@@ -99,13 +101,20 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        print("[AppDelegate] Requesting notification authorization...")
+        notificationManager.requestAuthorization()
+
         print("[AppDelegate] Subscribing to WeatherManager / settings change events...")
         Publishers.Merge(
             weatherManager.objectWillChange.map { _ in () },
             settings.objectWillChange.map { _ in () }
         )
         .receive(on: RunLoop.main)
-        .sink { [weak self] in self?.menuBarManager.updateStatusItem() }
+        .sink { [weak self] in
+            guard let self = self else { return }
+            self.menuBarManager.updateStatusItem()
+            self.notificationManager.evaluateAndNotify()
+        }
         .store(in: &cancellables)
 
         print("[AppDelegate] Starting the Weather Engine...")
@@ -329,6 +338,13 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func toggleWeatherAlerts() {
+        settings.showWeatherAlerts.toggle()
+        if let item = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleWeatherAlerts) }) {
+            item.state = settings.showWeatherAlerts ? .on : .off
+        }
+    }
+
     @objc func toggleBottomLine() {
         settings.showBottomLine.toggle()
         if let item = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleBottomLine) }) {
@@ -384,6 +400,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         settings.manualWeatherCode = nil
         settings.manualIsNight = nil
         settings.ecoMode = false
+        settings.showWeatherAlerts = true
         userDisabledEco = false
 
         menuBarManager.syncMenuStates()

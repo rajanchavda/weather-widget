@@ -48,6 +48,11 @@ class MenuBarManager {
         auroraToggle.state = settings.showAurora ? .on : .off
         menu.addItem(auroraToggle)
 
+        let alertToggle = NSMenuItem(title: "Weather Alerts", action: #selector(AppDelegate.toggleWeatherAlerts), keyEquivalent: "")
+        alertToggle.target = appDelegate
+        alertToggle.state = settings.showWeatherAlerts ? .on : .off
+        menu.addItem(alertToggle)
+
         let lineToggle = NSMenuItem(title: "Bottom Forecast Line", action: #selector(AppDelegate.toggleBottomLine), keyEquivalent: "")
         lineToggle.target = appDelegate
         lineToggle.state = settings.showBottomLine ? .on : .off
@@ -250,6 +255,10 @@ class MenuBarManager {
 
         if let lineItem = menu.items.first(where: { $0.action == #selector(AppDelegate.toggleBottomLine) }) {
             lineItem.state = settings.showBottomLine ? .on : .off
+        }
+
+        if let alertItem = menu.items.first(where: { $0.action == #selector(AppDelegate.toggleWeatherAlerts) }) {
+            alertItem.state = settings.showWeatherAlerts ? .on : .off
         }
 
         for item in menu.items where item.title == "Temperature Unit" {
