@@ -92,6 +92,11 @@ class MenuBarManager {
         brightnessItem.submenu = brightnessMenu
         menu.addItem(brightnessItem)
 
+        let ecoToggle = NSMenuItem(title: "Eco Mode", action: #selector(AppDelegate.toggleEcoMode), keyEquivalent: "")
+        ecoToggle.target = appDelegate
+        ecoToggle.state = settings.ecoMode ? .on : .off
+        menu.addItem(ecoToggle)
+
         let auroraStyleMenu = NSMenu()
         for style in OverlaySettings.AuroraStyle.allCases {
             let item = NSMenuItem(title: style.rawValue, action: #selector(AppDelegate.setAuroraStyle(_:)), keyEquivalent: "")
@@ -173,11 +178,9 @@ class MenuBarManager {
             locationTitle = "Location: \(city)"
         }
 
-        if appDelegate.isUpdateReady {
-            button.title = title + " ⚠️"
-        } else {
-            button.title = title
-        }
+        let ecoSuffix = settings.ecoMode ? " 🌱" : ""
+        let updateSuffix = appDelegate.isUpdateReady ? " ⚠️" : ""
+        button.title = title + ecoSuffix + updateSuffix
 
         if let menu = appDelegate.statusItem?.menu, menu.items.count > 1 {
             menu.items[1].title = locationTitle
@@ -265,6 +268,10 @@ class MenuBarManager {
                     }
                 }
             }
+        }
+
+        if let ecoItem = menu.items.first(where: { $0.action == #selector(AppDelegate.toggleEcoMode) }) {
+            ecoItem.state = settings.ecoMode ? .on : .off
         }
 
         for item in menu.items where item.title == "Try Different Aurora" {

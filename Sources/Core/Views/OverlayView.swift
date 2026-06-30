@@ -3,6 +3,15 @@ import SwiftUI
 struct OverlayView: View {
     @ObservedObject var weatherManager: WeatherManager
     @ObservedObject var settings: OverlaySettings
+    @State private var freezeTimestamp: Date = Date()
+
+    private var isEcoActive: Bool {
+        settings.ecoMode
+    }
+
+    private var freezeDate: Date? {
+        isEcoActive ? freezeTimestamp : nil
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -15,23 +24,23 @@ struct OverlayView: View {
                     .transition(.opacity)
 
                     if shouldShowStars() {
-                        StarsView(width: geometry.size.width, height: geometry.size.height)
+                        StarsView(width: geometry.size.width, height: geometry.size.height, freezeDate: freezeDate)
                     }
 
                     let code = getEffectiveWeatherCode()
 
                     if (code == 0 || code == 1) && !checkIsNight() {
-                        SunView(width: geometry.size.width, height: geometry.size.height)
+                        SunView(width: geometry.size.width, height: geometry.size.height, freezeDate: freezeDate)
                             .id("sun-\(code)")
                     }
 
                     if code == 2 || code == 3 {
-                        CloudView(width: geometry.size.width, height: geometry.size.height)
+                        CloudView(width: geometry.size.width, height: geometry.size.height, freezeDate: freezeDate)
                             .id("clouds-\(code)")
                     }
 
                     if code == 45 || code == 48 {
-                        FogView(width: geometry.size.width, height: geometry.size.height / 2, isNight: checkIsNight())
+                        FogView(width: geometry.size.width, height: geometry.size.height / 2, isNight: checkIsNight(), freezeDate: freezeDate)
                             .frame(height: geometry.size.height / 2)
                             .frame(maxHeight: .infinity, alignment: .top)
                             .clipped()
@@ -39,22 +48,22 @@ struct OverlayView: View {
                     }
 
                     if code >= 51 && code <= 67 {
-                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .light)
+                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .light, freezeDate: freezeDate)
                             .id("rain-light-\(code)")
                     }
 
                     if code >= 80 && code <= 82 {
-                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .medium)
+                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .medium, freezeDate: freezeDate)
                             .id("rain-medium-\(code)")
                     }
 
                     if code >= 95 && code <= 99 {
-                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .heavy)
+                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .heavy, freezeDate: freezeDate)
                             .id("rain-heavy-\(code)")
                     }
 
                     if (code >= 71 && code <= 77) || (code >= 85 && code <= 86) {
-                        SnowView(width: geometry.size.width, height: geometry.size.height)
+                        SnowView(width: geometry.size.width, height: geometry.size.height, freezeDate: freezeDate)
                             .id("snow-\(code)")
                     }
                 }
@@ -76,6 +85,14 @@ struct OverlayView: View {
         .animation(.easeInOut(duration: 0.5), value: settings.showBottomLine)
         .animation(.easeInOut(duration: 0.3), value: settings.brightness)
         .animation(.easeInOut(duration: 0.5), value: settings.manualWeatherCode)
+        .onChange(of: getEffectiveWeatherCode()) { _ in
+            if isEcoActive {
+                freezeTimestamp = Date()
+            }
+        }
+        .onChange(of: settings.ecoMode) { newValue in
+            freezeTimestamp = Date()
+        }
     }
 
     private func checkIsNight() -> Bool {

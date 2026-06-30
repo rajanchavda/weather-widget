@@ -245,6 +245,101 @@ final class MenuBarManagerTests: XCTestCase {
         XCTAssertTrue(title.contains("50.0"))
     }
 
+    // MARK: - Eco Mode
+
+    func testStatusItemText_ecoModeShowsLeaf() {
+        settings.ecoMode = true
+
+        menuBarManager.updateStatusItem(temp: 22.0, code: 0, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("🌱"))
+        XCTAssertTrue(title.contains("22.0"))
+    }
+
+    func testStatusItemText_ecoModeLeafNotShownWhenOff() {
+        settings.ecoMode = false
+
+        menuBarManager.updateStatusItem(temp: 22.0, code: 0, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertFalse(title.contains("🌱"))
+    }
+
+    func testStatusItemText_ecoModeWithUpdateReady() {
+        settings.ecoMode = true
+        appDelegate.isUpdateReady = true
+
+        menuBarManager.updateStatusItem(temp: 15.0, code: 0, city: "Paris", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("🌱"))
+        XCTAssertTrue(title.contains("⚠️"))
+    }
+
+    func testStatusItemText_ecoModeIconOnly() {
+        settings.displayMode = .iconOnly
+        settings.ecoMode = true
+
+        menuBarManager.updateStatusItem(temp: 22.0, code: 0, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("🌱"))
+        XCTAssertTrue(title.contains("☀️"))
+        XCTAssertFalse(title.contains("22.0"))
+    }
+
+    func testStatusItemText_ecoModeNoData() {
+        settings.ecoMode = true
+
+        menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertEqual(title, "🌤️ -- 🌱")
+    }
+
+    func testEcoModeMenuItemExists() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        XCTAssertNotNil(ecoItem)
+    }
+
+    func testEcoModeMenuItemState_on() {
+        settings.ecoMode = true
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        XCTAssertEqual(ecoItem?.state, NSControl.StateValue.on)
+    }
+
+    func testEcoModeMenuItemState_off() {
+        settings.ecoMode = false
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        XCTAssertEqual(ecoItem?.state, NSControl.StateValue.off)
+    }
+
+    func testEcoModeMenuItemTargetIsAppDelegate() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        XCTAssertTrue(ecoItem?.target is AppDelegate)
+    }
+
+    func testEcoModeMenuItemAction() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        XCTAssertEqual(ecoItem?.action, #selector(AppDelegate.toggleEcoMode))
+    }
+
     // MARK: - About Menu Item
 
     func testAboutMenuItemExists() {

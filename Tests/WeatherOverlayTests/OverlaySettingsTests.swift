@@ -72,6 +72,30 @@ final class OverlaySettingsTests: XCTestCase {
         XCTAssertNil(settings.manualIsNight)
     }
 
+    // MARK: - Eco Mode
+
+    func testEcoMode_default() {
+        XCTAssertFalse(settings.ecoMode)
+    }
+
+    func testEcoMode_toggle() {
+        settings.ecoMode = true
+        XCTAssertTrue(settings.ecoMode)
+
+        settings.ecoMode = false
+        XCTAssertFalse(settings.ecoMode)
+    }
+
+    func testEcoMode_publishesOnChange() {
+        let expectation = expectation(description: "ecoMode publishes")
+        settings.objectWillChange
+            .sink { _ in expectation.fulfill() }
+            .store(in: &cancellables)
+
+        settings.ecoMode = true
+        wait(for: [expectation], timeout: 0.5)
+    }
+
     func testDisplayMode_default() {
         XCTAssertEqual(settings.displayMode, .iconAndTemp)
     }
