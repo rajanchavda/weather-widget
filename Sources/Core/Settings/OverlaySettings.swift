@@ -9,6 +9,7 @@ class OverlaySettings: ObservableObject {
     @Published var manualIsNight: Bool? = nil
     @Published var displayMode: StatusBarDisplayMode = .iconAndTemp
     @Published var ecoMode: Bool = false
+    @Published var showWeatherAlerts: Bool = true
 
     enum StatusBarDisplayMode: String, CaseIterable {
         case iconAndTemp = "Icon + Temperature"
@@ -44,8 +45,5 @@ class OverlaySettings: ObservableObject {
             }
         }
 
-        var forceNight: Bool {
-            return self == .clearNight
-        }
     }
 }

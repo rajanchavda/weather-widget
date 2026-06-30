@@ -63,5 +63,6 @@ struct WeatherResponse: Codable {
         let time: [String]
         let temperature_2m: [Double]
         let weather_code: [Int]
+        let precipitation: [Double]?
     }
 }
