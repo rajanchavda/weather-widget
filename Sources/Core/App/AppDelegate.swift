@@ -67,6 +67,34 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(displayDidSleep),
+            name: NSWorkspace.screensDidSleepNotification,
+            object: nil
+        )
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(displayDidWake),
+            name: NSWorkspace.screensDidWakeNotification,
+            object: nil
+        )
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(sessionDidResignActive),
+            name: NSWorkspace.sessionDidResignActiveNotification,
+            object: nil
+        )
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(sessionDidBecomeActive),
+            name: NSWorkspace.sessionDidBecomeActiveNotification,
+            object: nil
+        )
+
         print("[AppDelegate] Subscribing to WeatherManager / settings change events...")
         Publishers.Merge(
             weatherManager.objectWillChange.map { _ in () },
@@ -135,18 +163,47 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func systemDidWake() {
-        print("[AppDelegate] System did wake notification received. Refreshing weather...")
-        weatherManager.fetchWeather()
-        triggerWindowRecreation()
+        print("[AppDelegate] System did wake notification received.")
+        resumeAll()
     }
 
     @objc private func systemWillSleep() {
-        print("[AppDelegate] System will sleep. Closing windows to prevent Metal GPU crashes...")
+        print("[AppDelegate] System will sleep.")
+        pauseAll()
+    }
+
+    @objc private func displayDidSleep() {
+        print("[AppDelegate] Display did sleep.")
+        pauseAll()
+    }
+
+    @objc private func displayDidWake() {
+        print("[AppDelegate] Display did wake.")
+        resumeAll()
+    }
+
+    @objc private func sessionDidResignActive() {
+        print("[AppDelegate] Session did resign active.")
+        pauseAll()
+    }
+
+    @objc private func sessionDidBecomeActive() {
+        print("[AppDelegate] Session did become active.")
+        resumeAll()
+    }
+
+    private func pauseAll() {
+        weatherManager.pause()
         NSObject.cancelPreviousPerformRequests(withTarget: self, selector: #selector(delayedSetupOverlayWindows), object: nil)
         for window in overlayWindows {
             window.close()
         }
         overlayWindows.removeAll()
+    }
+
+    private func resumeAll() {
+        weatherManager.resume()
+        setupOverlayWindows()
     }
 
     @objc func toggleLaunchAtLogin() {
