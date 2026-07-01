@@ -133,6 +133,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
         for screen in NSScreen.screens {
             let frame = getMenuBarFrame(for: screen)
+            guard frame.height > 1 else { continue }
 
             let window = NSWindow(
                 contentRect: frame,
@@ -258,12 +259,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     private func getMenuBarFrame(for screen: NSScreen) -> NSRect {
         let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
-
-        let menuBarHeight = max(screenFrame.height - visibleFrame.maxY, NSStatusBar.system.thickness)
+        let menuBarHeight = (screenFrame.origin.y + screenFrame.height) - visibleFrame.maxY
 
         return NSRect(
             x: screenFrame.origin.x,
-            y: screenFrame.origin.y + screenFrame.height - menuBarHeight,
+            y: visibleFrame.maxY,
             width: screenFrame.width,
             height: menuBarHeight
         )
