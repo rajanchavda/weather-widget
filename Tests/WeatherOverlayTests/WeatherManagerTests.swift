@@ -367,6 +367,130 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertTrue(manager.hasData)
     }
 
+    // MARK: - AQI Fetch
+
+    func testFetchWeather_withAQI_success() async throws {
+        let geoData = freeGeoJSON()
+        let weatherData = weatherJSON()
+        let aqiData = aqiJSON()
+
+        let fetchExpectation = expectation(description: "fetchWeather with AQI completes")
+
+        URLProtocolMock.requestHandler = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, geoData)
+            }
+            if urlString.contains("air-quality-api.open-meteo.com") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, aqiData)
+            }
+            if urlString.contains("open-meteo.com") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherData)
+            }
+            fatalError("Unexpected request: \(urlString)")
+        }
+
+        manager = WeatherManager(session: .mock)
+        manager.$aqiValue
+            .dropFirst()
+            .sink { value in
+                if value != nil {
+                    fetchExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        manager.fetchWeather()
+
+        await fulfillment(of: [fetchExpectation], timeout: 3.0)
+
+        XCTAssertEqual(manager.aqiValue, 42)
+        XCTAssertEqual(manager.aqiLabel, "Moderate")
+        XCTAssertEqual(manager.currentTemp, 22.5)
+        XCTAssertTrue(manager.hasData)
+    }
+
+    func testFetchWeather_withAQI_failureIsNonFatal() async throws {
+        let geoData = freeGeoJSON()
+        let weatherData = weatherJSON()
+
+        let fetchExpectation = expectation(description: "fetchWeather with AQI failure completes")
+
+        URLProtocolMock.requestHandler = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, geoData)
+            }
+            if urlString.contains("air-quality-api.open-meteo.com") {
+                throw URLError(.badServerResponse)
+            }
+            if urlString.contains("open-meteo.com") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherData)
+            }
+            fatalError("Unexpected request: \(urlString)")
+        }
+
+        manager = WeatherManager(session: .mock)
+        manager.$currentTemp
+            .dropFirst()
+            .sink { temp in
+                if temp != 0 {
+                    fetchExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        manager.fetchWeather()
+
+        await fulfillment(of: [fetchExpectation], timeout: 3.0)
+
+        XCTAssertNil(manager.aqiValue)
+        XCTAssertEqual(manager.aqiLabel, "")
+        XCTAssertEqual(manager.currentTemp, 22.5)
+        XCTAssertTrue(manager.hasData)
+    }
+
+    func testFetchWeather_withAQI_failure_clearsStaleValue() async throws {
+        let geoData = freeGeoJSON()
+        let weatherData = weatherJSON()
+
+        let fetchExpectation = expectation(description: "fetchWeather with AQI stale value clears")
+
+        URLProtocolMock.requestHandler = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, geoData)
+            }
+            if urlString.contains("air-quality-api.open-meteo.com") {
+                throw URLError(.badServerResponse)
+            }
+            if urlString.contains("open-meteo.com") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherData)
+            }
+            fatalError("Unexpected request: \(urlString)")
+        }
+
+        manager = WeatherManager(session: .mock)
+        manager.aqiValue = 42
+        manager.aqiLabel = "Moderate"
+        manager.$aqiValue
+            .dropFirst()
+            .sink { value in
+                if value == nil {
+                    fetchExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        manager.fetchWeather()
+
+        await fulfillment(of: [fetchExpectation], timeout: 3.0)
+
+        XCTAssertNil(manager.aqiValue)
+        XCTAssertEqual(manager.aqiLabel, "")
+        XCTAssertEqual(manager.currentTemp, 22.5)
+    }
+
     // MARK: - JSON Fixtures
 
     private func freeGeoJSON() -> Data {
@@ -391,6 +515,12 @@ final class WeatherManagerTests: XCTestCase {
     private func geocodingJSON() -> Data {
         """
         {"results": [{"name": "Mumbai", "latitude": 19.0760, "longitude": 72.8777, "country": "India", "admin1": "Maharashtra"}]}
+        """.data(using: .utf8)!
+    }
+
+    private func aqiJSON() -> Data {
+        """
+        {"current": {"european_aqi": 42}}
         """.data(using: .utf8)!
     }
 }

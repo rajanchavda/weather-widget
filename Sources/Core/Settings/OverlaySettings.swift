@@ -10,6 +10,7 @@ class OverlaySettings: ObservableObject {
     @Published var displayMode: StatusBarDisplayMode = .iconAndTemp
     @Published var ecoMode: Bool = false
     @Published var showWeatherAlerts: Bool = true
+    @Published var showAQI: Bool = false
 
     enum StatusBarDisplayMode: String, CaseIterable {
         case iconAndTemp = "Icon + Temperature"
