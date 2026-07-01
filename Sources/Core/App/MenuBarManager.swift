@@ -78,6 +78,11 @@ class MenuBarManager {
             item.state = settings.displayMode == mode ? .on : .off
             displayModeMenu.addItem(item)
         }
+        displayModeMenu.addItem(NSMenuItem.separator())
+        let aqiItem = NSMenuItem(title: "Show Air Quality Index", action: #selector(AppDelegate.toggleAQI), keyEquivalent: "")
+        aqiItem.target = appDelegate
+        aqiItem.state = settings.showAQI ? .on : .off
+        displayModeMenu.addItem(aqiItem)
         let displayModeItem = NSMenuItem(title: "Status Bar Display", action: nil, keyEquivalent: "")
         displayModeItem.submenu = displayModeMenu
         menu.addItem(displayModeItem)
@@ -183,9 +188,15 @@ class MenuBarManager {
             locationTitle = "Location: \(city)"
         }
 
+        let aqiSuffix: String
+        if settings.showAQI, let aqi = weatherManager.aqiValue {
+            aqiSuffix = " AQI: \(Int(aqi)) \(weatherManager.aqiLabel)"
+        } else {
+            aqiSuffix = ""
+        }
         let ecoSuffix = settings.ecoMode ? " 🌱" : ""
         let updateSuffix = appDelegate.isUpdateReady ? " ⚠️" : ""
-        button.title = title + ecoSuffix + updateSuffix
+        button.title = title + aqiSuffix + ecoSuffix + updateSuffix
 
         if let menu = appDelegate.statusItem?.menu, menu.items.count > 1 {
             menu.items[1].title = locationTitle
@@ -341,6 +352,9 @@ class MenuBarManager {
                     if let mode = modeItem.representedObject as? OverlaySettings.StatusBarDisplayMode {
                         modeItem.state = mode == settings.displayMode ? .on : .off
                     }
+                }
+                if let aqiItem = submenu.items.first(where: { $0.action == #selector(AppDelegate.toggleAQI) }) {
+                    aqiItem.state = settings.showAQI ? .on : .off
                 }
             }
         }

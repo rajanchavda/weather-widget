@@ -66,3 +66,48 @@ struct WeatherResponse: Codable {
         let precipitation: [Double]?
     }
 }
+
+// MARK: - Air Quality
+
+struct AirQualityResponse: Codable {
+    let current: CurrentAirQuality
+
+    struct CurrentAirQuality: Codable {
+        let europeanAqi: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case europeanAqi = "european_aqi"
+        }
+    }
+}
+
+enum AQICategory: String, CaseIterable {
+    case good
+    case fair
+    case moderate
+    case poor
+    case veryPoor
+    case extremelyPoor
+
+    var label: String {
+        switch self {
+        case .good: return "Good"
+        case .fair: return "Fair"
+        case .moderate: return "Moderate"
+        case .poor: return "Poor"
+        case .veryPoor: return "Very Poor"
+        case .extremelyPoor: return "Extremely Poor"
+        }
+    }
+
+    static func from(europeanAqi: Double) -> AQICategory {
+        switch europeanAqi {
+        case ..<20:  return .good
+        case ..<40:  return .fair
+        case ..<60:  return .moderate
+        case ..<80:  return .poor
+        case ..<100: return .veryPoor
+        default:     return .extremelyPoor
+        }
+    }
+}

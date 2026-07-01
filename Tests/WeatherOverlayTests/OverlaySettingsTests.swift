@@ -27,6 +27,7 @@ final class OverlaySettingsTests: XCTestCase {
         XCTAssertEqual(settings.brightness, 1.0)
         XCTAssertNil(settings.manualWeatherCode)
         XCTAssertNil(settings.manualIsNight)
+        XCTAssertFalse(settings.showAQI)
     }
 
     func testBrightness_default() {
@@ -70,6 +71,30 @@ final class OverlaySettingsTests: XCTestCase {
 
         settings.manualIsNight = nil
         XCTAssertNil(settings.manualIsNight)
+    }
+
+    // MARK: - Eco Mode
+
+    // MARK: - AQI
+
+    func testAQI_default() {
+        XCTAssertFalse(settings.showAQI)
+    }
+
+    func testAQI_toggle() {
+        settings.showAQI = true
+        XCTAssertTrue(settings.showAQI)
+        settings.showAQI = false
+        XCTAssertFalse(settings.showAQI)
+    }
+
+    func testAQI_publishesOnChange() {
+        let expectation = expectation(description: "showAQI publishes")
+        settings.objectWillChange
+            .sink { _ in expectation.fulfill() }
+            .store(in: &cancellables)
+        settings.showAQI = true
+        wait(for: [expectation], timeout: 0.5)
     }
 
     // MARK: - Eco Mode
