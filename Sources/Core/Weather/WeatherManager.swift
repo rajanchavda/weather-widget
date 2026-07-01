@@ -17,6 +17,8 @@ class WeatherManager: ObservableObject {
     @Published var hasData: Bool = false
     @Published var errorMessage: String? = nil
     @Published var isPaused: Bool = false
+    @Published var aqiValue: Double? = nil
+    @Published var aqiLabel: String = ""
 
     private var timer: AnyCancellable?
     private var fetchGeneration: Int = 0
@@ -149,6 +151,27 @@ class WeatherManager: ObservableObject {
                 self.hasData = true
                 self.isFetching = false
                 print("[WeatherManager] fetchWeather() completed successfully.")
+
+                do {
+                    print("[WeatherManager] Fetching air quality data...")
+                    let aqi = try await fetchAirQuality(lat: lat, lon: lon)
+                    guard generation == self.fetchGeneration else {
+                        print("[WeatherManager] Discarding stale AQI result (gen=\(generation), current=\(self.fetchGeneration))")
+                        return
+                    }
+                    if let value = aqi.current.europeanAqi {
+                        self.aqiValue = value
+                        self.aqiLabel = AQICategory.from(europeanAqi: value).label
+                    } else {
+                        self.aqiValue = nil
+                        self.aqiLabel = ""
+                    }
+                    print("[WeatherManager] Air quality fetched: AQI=\(self.aqiValue ?? -1) \(self.aqiLabel)")
+                } catch {
+                    print("[WeatherManager] AQI fetch failed (non-fatal): \(error.localizedDescription)")
+                    self.aqiValue = nil
+                    self.aqiLabel = ""
+                }
             } catch {
                 print("[WeatherManager] Primary fetch error: \(error.localizedDescription)")
                 let primaryErrStr = error.localizedDescription
@@ -174,6 +197,27 @@ class WeatherManager: ObservableObject {
                     self.errorMessage = nil
                     self.isFetching = false
                     print("[WeatherManager] Fallback completed.")
+
+                    do {
+                        print("[WeatherManager] Fetching air quality data (fallback)...")
+                        let aqi = try await fetchAirQuality(lat: 51.5074, lon: -0.1278)
+                        guard generation == self.fetchGeneration else {
+                            print("[WeatherManager] Discarding stale AQI result (gen=\(generation), current=\(self.fetchGeneration))")
+                            return
+                        }
+                        if let value = aqi.current.europeanAqi {
+                            self.aqiValue = value
+                            self.aqiLabel = AQICategory.from(europeanAqi: value).label
+                        } else {
+                            self.aqiValue = nil
+                            self.aqiLabel = ""
+                        }
+                        print("[WeatherManager] Air quality fetched (fallback): AQI=\(self.aqiValue ?? -1) \(self.aqiLabel)")
+                    } catch {
+                        print("[WeatherManager] AQI fetch failed (fallback, non-fatal): \(error.localizedDescription)")
+                        self.aqiValue = nil
+                        self.aqiLabel = ""
+                    }
                 } catch {
                     print("[WeatherManager] Fallback weather fetch also failed: \(error.localizedDescription)")
                     guard generation == self.fetchGeneration else {
@@ -266,5 +310,25 @@ class WeatherManager: ObservableObject {
         }
 
         return try JSONDecoder().decode(WeatherResponse.self, from: data)
+    }
+
+    private func fetchAirQuality(lat: Double, lon: Double) async throws -> AirQualityResponse {
+        let posixLocale = Locale(identifier: "en_US_POSIX")
+        let latStr = String(format: "%.6f", locale: posixLocale, lat)
+        let lonStr = String(format: "%.6f", locale: posixLocale, lon)
+
+        let urlString = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=\(latStr)&longitude=\(lonStr)&current=european_aqi"
+
+        guard let url = URL(string: urlString) else {
+            throw URLError(.badURL)
+        }
+
+        let (data, response) = try await session.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+
+        return try JSONDecoder().decode(AirQualityResponse.self, from: data)
     }
 }

@@ -176,4 +176,68 @@ final class ModelsTests: XCTestCase {
 
         defaults.removeObject(forKey: key)
     }
+
+    // MARK: - Air Quality
+
+    func testAirQualityResponse_decoding() throws {
+        let json = """
+        {
+          "current": {
+            "european_aqi": 42
+          }
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(AirQualityResponse.self, from: json)
+
+        XCTAssertEqual(response.current.europeanAqi, 42)
+    }
+
+    func testAirQualityResponse_decodingMissingAQI() throws {
+        let json = """
+        {
+          "current": {}
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(AirQualityResponse.self, from: json)
+
+        XCTAssertNil(response.current.europeanAqi)
+    }
+
+    func testAQICategory_good() {
+        XCTAssertEqual(AQICategory.from(europeanAqi: 0).label, "Good")
+        XCTAssertEqual(AQICategory.from(europeanAqi: 19).label, "Good")
+    }
+
+    func testAQICategory_fair() {
+        XCTAssertEqual(AQICategory.from(europeanAqi: 20).label, "Fair")
+        XCTAssertEqual(AQICategory.from(europeanAqi: 39).label, "Fair")
+    }
+
+    func testAQICategory_moderate() {
+        XCTAssertEqual(AQICategory.from(europeanAqi: 40).label, "Moderate")
+        XCTAssertEqual(AQICategory.from(europeanAqi: 59).label, "Moderate")
+    }
+
+    func testAQICategory_poor() {
+        XCTAssertEqual(AQICategory.from(europeanAqi: 60).label, "Poor")
+        XCTAssertEqual(AQICategory.from(europeanAqi: 79).label, "Poor")
+    }
+
+    func testAQICategory_veryPoor() {
+        XCTAssertEqual(AQICategory.from(europeanAqi: 80).label, "Very Poor")
+        XCTAssertEqual(AQICategory.from(europeanAqi: 99).label, "Very Poor")
+    }
+
+    func testAQICategory_extremelyPoor() {
+        XCTAssertEqual(AQICategory.from(europeanAqi: 100).label, "Extremely Poor")
+        XCTAssertEqual(AQICategory.from(europeanAqi: 150).label, "Extremely Poor")
+    }
+
+    func testAQICategory_allCases() {
+        let categories = AQICategory.allCases
+        XCTAssertEqual(categories.count, 6)
+        XCTAssertEqual(categories.map(\.label), ["Good", "Fair", "Moderate", "Poor", "Very Poor", "Extremely Poor"])
+    }
 }

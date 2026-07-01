@@ -329,6 +329,12 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         menuBarManager.updateStatusItem()
     }
 
+    @objc func toggleAQI() {
+        settings.showAQI.toggle()
+        menuBarManager.syncDisplayModeSubmenu()
+        menuBarManager.updateStatusItem()
+    }
+
     // MARK: - Menu Selectors
 
     @objc func toggleAurora() {
@@ -401,6 +407,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         settings.manualIsNight = nil
         settings.ecoMode = false
         settings.showWeatherAlerts = true
+        settings.showAQI = false
         userDisabledEco = false
 
         menuBarManager.syncMenuStates()

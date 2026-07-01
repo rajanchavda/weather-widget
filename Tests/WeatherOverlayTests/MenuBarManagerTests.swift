@@ -340,6 +340,122 @@ final class MenuBarManagerTests: XCTestCase {
         XCTAssertEqual(ecoItem?.action, #selector(AppDelegate.toggleEcoMode))
     }
 
+    // MARK: - AQI Display
+
+    func testAQINotShownByDefault() {
+        weatherManager.aqiValue = 42
+        weatherManager.aqiLabel = "Fair"
+
+        menuBarManager.updateStatusItem(temp: 22.0, code: 0, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertFalse(title.contains("AQI"))
+    }
+
+    func testAQIShownWhenEnabled() {
+        settings.showAQI = true
+        weatherManager.aqiValue = 42
+        weatherManager.aqiLabel = "Fair"
+
+        menuBarManager.updateStatusItem(temp: 22.0, code: 0, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("AQI: 42"))
+        XCTAssertTrue(title.contains("Fair"))
+        XCTAssertTrue(title.contains("22.0"))
+    }
+
+    func testAQIWithEcoMode() {
+        settings.showAQI = true
+        settings.ecoMode = true
+        weatherManager.aqiValue = 12
+        weatherManager.aqiLabel = "Good"
+
+        menuBarManager.updateStatusItem(temp: 22.0, code: 0, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("AQI: 12"))
+        XCTAssertTrue(title.contains("Good"))
+        XCTAssertTrue(title.contains("🌱"))
+    }
+
+    func testAQIWithUpdateReady() {
+        settings.showAQI = true
+        appDelegate.isUpdateReady = true
+        weatherManager.aqiValue = 55
+        weatherManager.aqiLabel = "Moderate"
+
+        menuBarManager.updateStatusItem(temp: 15.0, code: 0, city: "Paris", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("AQI: 55"))
+        XCTAssertTrue(title.contains("⚠️"))
+    }
+
+    func testAQIIconOnly() {
+        settings.showAQI = true
+        settings.displayMode = .iconOnly
+        weatherManager.aqiValue = 30
+        weatherManager.aqiLabel = "Fair"
+
+        menuBarManager.updateStatusItem(temp: 22.0, code: 0, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("☀️"))
+        XCTAssertTrue(title.contains("AQI: 30"))
+        XCTAssertFalse(title.contains("22.0"))
+    }
+
+    func testAQINotShownWhenNoData() {
+        settings.showAQI = true
+        weatherManager.aqiValue = nil
+        weatherManager.aqiLabel = ""
+
+        menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertEqual(title, "🌤️ --")
+        XCTAssertFalse(title.contains("AQI"))
+    }
+
+    private func findAQIMenuItem() -> NSMenuItem? {
+        guard let menu = appDelegate.statusItem?.menu else { return nil }
+        guard let displayModeItem = menu.items.first(where: { $0.title == "Status Bar Display" }),
+              let submenu = displayModeItem.submenu else { return nil }
+        return submenu.items.first(where: { $0.title == "Show Air Quality Index" })
+    }
+
+    func testAQIToggleMenuItemExists() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        XCTAssertNotNil(findAQIMenuItem())
+    }
+
+    func testAQIToggleMenuItemTargetIsAppDelegate() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let aqiItem = findAQIMenuItem()
+        XCTAssertTrue(aqiItem?.target is AppDelegate)
+    }
+
+    func testAQIToggleMenuItemAction() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let aqiItem = findAQIMenuItem()
+        XCTAssertEqual(aqiItem?.action, #selector(AppDelegate.toggleAQI))
+    }
+
+    func testAQIToggleMenuItemState_off() {
+        settings.showAQI = false
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let aqiItem = findAQIMenuItem()
+        XCTAssertEqual(aqiItem?.state, NSControl.StateValue.off)
+    }
+
+    func testAQIToggleMenuItemState_on() {
+        settings.showAQI = true
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let aqiItem = findAQIMenuItem()
+        XCTAssertEqual(aqiItem?.state, NSControl.StateValue.on)
+    }
+
     // MARK: - About Menu Item
 
     func testAboutMenuItemExists() {
