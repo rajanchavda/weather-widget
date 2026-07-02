@@ -20,6 +20,11 @@ class WeatherManager: ObservableObject {
     @Published var aqiValue: Double? = nil
     @Published var aqiLabel: String = ""
 
+    @Published var savedLocations: [SavedLocation] = []
+    @Published var activeLocationId: UUID? = nil
+
+    private let activeIdKey = "WeatherOverlay.activeLocationId"
+
     private var timer: AnyCancellable?
     private var fetchGeneration: Int = 0
     private let pathMonitor = NWPathMonitor()
@@ -39,6 +44,7 @@ class WeatherManager: ObservableObject {
             config.timeoutIntervalForResource = 5.0
             return URLSession(configuration: config)
         }()
+        loadSavedLocations()
     }
 
 #if swift(>=6.0)
@@ -53,6 +59,7 @@ class WeatherManager: ObservableObject {
 
     func start() {
         isPaused = false
+        loadSavedLocations()
         fetchWeather()
         startTimer()
         setupNetworkMonitoring()
@@ -97,6 +104,119 @@ class WeatherManager: ObservableObject {
             }
         }
         pathMonitor.start(queue: DispatchQueue.global(qos: .background))
+    }
+
+    // MARK: - Saved Location Management
+
+    private func loadSavedLocations() {
+        savedLocations = SavedLocation.loadAll()
+        if let idString = UserDefaults.standard.string(forKey: activeIdKey),
+           let id = UUID(uuidString: idString) {
+            activeLocationId = id
+        }
+        migrateLegacyManualLocation()
+        if let activeId = activeLocationId,
+           savedLocations.contains(where: { $0.id == activeId }) {
+            syncManualLocationFromActiveId()
+        } else {
+            activeLocationId = nil
+        }
+    }
+
+    private func migrateLegacyManualLocation() {
+        guard savedLocations.isEmpty else { return }
+        guard let legacy = ManualLocation.load() else { return }
+        let saved = SavedLocation(
+            id: UUID(),
+            name: legacy.name,
+            latitude: legacy.latitude,
+            longitude: legacy.longitude
+        )
+        savedLocations = [saved]
+        activeLocationId = saved.id
+        saveSavedLocations()
+        print("[WeatherManager] Migrated legacy manual location: \(legacy.name)")
+    }
+
+    private func saveSavedLocations() {
+        SavedLocation.saveAll(savedLocations)
+        if let id = activeLocationId {
+            UserDefaults.standard.set(id.uuidString, forKey: activeIdKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: activeIdKey)
+        }
+    }
+
+    private func syncManualLocationFromActiveId() {
+        guard let id = activeLocationId,
+              let location = savedLocations.first(where: { $0.id == id }) else {
+            manualLocation = nil
+            return
+        }
+        manualLocation = ManualLocation(
+            name: location.name,
+            latitude: location.latitude,
+            longitude: location.longitude
+        )
+    }
+
+    func switchToLocation(id: UUID?) {
+        guard let id = id, savedLocations.contains(where: { $0.id == id }) else {
+            switchToAutoLocation()
+            return
+        }
+        activeLocationId = id
+        syncManualLocationFromActiveId()
+        saveSavedLocations()
+        fetchWeather()
+    }
+
+    func switchToAutoLocation() {
+        activeLocationId = nil
+        manualLocation = nil
+        saveSavedLocations()
+        fetchWeather()
+    }
+
+    func addSavedLocation(_ location: SavedLocation) {
+        if savedLocations.contains(where: { $0.id == location.id }) { return }
+        if savedLocations.contains(where: { $0.name == location.name &&
+            abs($0.latitude - location.latitude) < 0.01 &&
+            abs($0.longitude - location.longitude) < 0.01 }) { return }
+        savedLocations.append(location)
+        saveSavedLocations()
+        activeLocationId = location.id
+        syncManualLocationFromActiveId()
+        fetchWeather()
+    }
+
+    func removeSavedLocation(id: UUID) {
+        savedLocations.removeAll { $0.id == id }
+        saveSavedLocations()
+        if activeLocationId == id {
+            activeLocationId = nil
+            manualLocation = nil
+        }
+        fetchWeather()
+    }
+
+    func saveCurrentAsSavedLocation() {
+        let locName = cityName
+        let lat: Double
+        let lon: Double
+        if let manual = manualLocation {
+            lat = manual.latitude
+            lon = manual.longitude
+        } else {
+            return
+        }
+        let newLocation = SavedLocation(
+            id: UUID(),
+            name: locName,
+            latitude: lat,
+            longitude: lon
+        )
+        addSavedLocation(newLocation)
     }
 
     func fetchWeather() {

@@ -156,6 +156,56 @@ final class ModelsTests: XCTestCase {
         XCTAssertNotEqual(a, c)
     }
 
+    // MARK: - SavedLocation
+
+    func testSavedLocation_codableRoundTrip() throws {
+        let location = SavedLocation(id: UUID(), name: "Tokyo", latitude: 35.6762, longitude: 139.6503)
+
+        let data = try JSONEncoder().encode(location)
+        let decoded = try JSONDecoder().decode(SavedLocation.self, from: data)
+
+        XCTAssertEqual(decoded.id, location.id)
+        XCTAssertEqual(decoded.name, "Tokyo")
+        XCTAssertEqual(decoded.latitude, 35.6762)
+        XCTAssertEqual(decoded.longitude, 139.6503)
+    }
+
+    func testSavedLocation_equality() {
+        let id = UUID()
+        let a = SavedLocation(id: id, name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        let b = SavedLocation(id: id, name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        let c = SavedLocation(id: UUID(), name: "London", latitude: 51.5074, longitude: -0.1278)
+
+        XCTAssertEqual(a, b)
+        XCTAssertNotEqual(a, c)
+    }
+
+    func testSavedLocation_persistence() throws {
+        let key = "WeatherOverlay.savedLocations"
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: key)
+
+        let loadedBefore = SavedLocation.loadAll()
+        XCTAssertTrue(loadedBefore.isEmpty)
+
+        let locations = [
+            SavedLocation(id: UUID(), name: "Berlin", latitude: 52.5200, longitude: 13.4050),
+            SavedLocation(id: UUID(), name: "Mumbai", latitude: 19.0760, longitude: 72.8777)
+        ]
+        SavedLocation.saveAll(locations)
+
+        let loadedAfter = SavedLocation.loadAll()
+        XCTAssertEqual(loadedAfter.count, 2)
+        XCTAssertEqual(loadedAfter[0].name, "Berlin")
+        XCTAssertEqual(loadedAfter[1].name, "Mumbai")
+
+        SavedLocation.saveAll([])
+        let loadedAfterClear = SavedLocation.loadAll()
+        XCTAssertTrue(loadedAfterClear.isEmpty)
+
+        defaults.removeObject(forKey: key)
+    }
+
     func testManualLocation_persistence() throws {
         let key = "WeatherOverlay.manualLocation"
         let defaults = UserDefaults.standard
