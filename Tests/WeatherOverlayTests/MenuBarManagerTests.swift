@@ -11,6 +11,9 @@ final class MenuBarManagerTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
+        UserDefaults.standard.removeObject(forKey: "WeatherOverlay.savedLocations")
+        UserDefaults.standard.removeObject(forKey: "WeatherOverlay.manualLocation")
+        UserDefaults.standard.removeObject(forKey: "WeatherOverlay.activeLocationId")
         weatherManager = WeatherManager(session: .mock)
         settings = OverlaySettings()
         appDelegate = MockAppDelegate()
@@ -84,6 +87,13 @@ final class MenuBarManagerTests: XCTestCase {
 
         let title = appDelegate.statusItem?.button?.title ?? ""
         XCTAssertTrue(title.contains("🌧️"))
+    }
+
+    func testStatusItemText_drizzle() {
+        menuBarManager.updateStatusItem(temp: 14.0, code: 51, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("🌧️"), "Drizzle (code 51) should still show rain emoji")
     }
 
     func testStatusItemText_snow() {
@@ -493,6 +503,196 @@ final class MenuBarManagerTests: XCTestCase {
 
         let aboutItem = menu.items.first(where: { $0.title == "About Weather Overlay" })
         XCTAssertTrue(aboutItem?.target is AppDelegate)
+    }
+
+    // MARK: - Locations Submenu
+
+    func testLocationsSubmenuExists() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        let locationsItem = menu.items.first(where: { $0.title == "Locations" })
+        XCTAssertNotNil(locationsItem)
+        XCTAssertNotNil(locationsItem?.submenu)
+    }
+
+    func testLocationsSubmenu_autoLocationItem() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        guard let locationsItem = menu.items.first(where: { $0.title == "Locations" }),
+              let submenu = locationsItem.submenu else {
+            XCTFail("Locations submenu not found"); return
+        }
+
+        let autoItem = submenu.items.first
+        XCTAssertEqual(autoItem?.title, "Auto (IP-based)")
+        XCTAssertEqual(autoItem?.action, #selector(AppDelegate.switchToAutoLocation))
+        XCTAssertTrue(autoItem?.target is AppDelegate)
+    }
+
+    func testLocationsSubmenu_addLocationItem() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        guard let locationsItem = menu.items.first(where: { $0.title == "Locations" }),
+              let submenu = locationsItem.submenu else {
+            XCTFail("Locations submenu not found"); return
+        }
+
+        let addItem = submenu.items.first(where: { $0.title == "Add Location..." })
+        XCTAssertNotNil(addItem)
+        XCTAssertEqual(addItem?.action, #selector(AppDelegate.addLocation))
+        XCTAssertTrue(addItem?.target is AppDelegate)
+    }
+
+    func testLocationsSubmenu_removeLocationItem() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        guard let locationsItem = menu.items.first(where: { $0.title == "Locations" }),
+              let submenu = locationsItem.submenu else {
+            XCTFail("Locations submenu not found"); return
+        }
+
+        let removeItem = submenu.items.first(where: { $0.title == "Remove Location..." })
+        XCTAssertNotNil(removeItem)
+        XCTAssertEqual(removeItem?.action, #selector(AppDelegate.removeLocation))
+        XCTAssertTrue(removeItem?.target is AppDelegate)
+    }
+
+    func testLocationsSubmenu_autoIsCheckedWhenNoActiveLocation() {
+        weatherManager.activeLocationId = nil
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        guard let locationsItem = menu.items.first(where: { $0.title == "Locations" }),
+              let submenu = locationsItem.submenu else {
+            XCTFail("Locations submenu not found"); return
+        }
+
+        let autoItem = submenu.items.first
+        XCTAssertEqual(autoItem?.state, NSControl.StateValue.on)
+    }
+
+    func testLocationsSubmenu_autoIsUncheckedWhenActiveLocation() {
+        let saved = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        weatherManager.savedLocations = [saved]
+        weatherManager.activeLocationId = saved.id
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        guard let locationsItem = menu.items.first(where: { $0.title == "Locations" }),
+              let submenu = locationsItem.submenu else {
+            XCTFail("Locations submenu not found"); return
+        }
+
+        let autoItem = submenu.items.first
+        XCTAssertEqual(autoItem?.state, NSControl.StateValue.off)
+    }
+
+    func testLocationsSubmenu_savedLocationItemsHaveCorrectAction() {
+        let saved = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        weatherManager.savedLocations = [saved]
+        weatherManager.activeLocationId = saved.id
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        guard let locationsItem = menu.items.first(where: { $0.title == "Locations" }),
+              let submenu = locationsItem.submenu else {
+            XCTFail("Locations submenu not found"); return
+        }
+
+        let savedItem = submenu.items.first(where: { $0.title == "Paris" })
+        XCTAssertNotNil(savedItem)
+        XCTAssertEqual(savedItem?.action, #selector(AppDelegate.switchToSavedLocation))
+        XCTAssertTrue(savedItem?.target is AppDelegate)
+        if let repoSaved = savedItem?.representedObject as? SavedLocation {
+            XCTAssertEqual(repoSaved.id, saved.id)
+            XCTAssertEqual(repoSaved.name, "Paris")
+        } else {
+            XCTFail("SavedLocation not passed as representedObject")
+        }
+    }
+
+    func testLocationsSubmenu_activeLocationPersistedOnRestart() {
+        let saved = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        SavedLocation.saveAll([saved])
+        UserDefaults.standard.set(saved.id.uuidString, forKey: "WeatherOverlay.activeLocationId")
+
+        let freshManager = WeatherManager(session: .mock)
+        XCTAssertEqual(freshManager.activeLocationId, saved.id, "activeLocationId restored from UserDefaults")
+        XCTAssertEqual(freshManager.savedLocations.count, 1)
+
+        let freshDelegate = MockAppDelegate()
+        let freshSettings = OverlaySettings()
+        let freshMenuBar = MenuBarManager(appDelegate: freshDelegate, weatherManager: freshManager, settings: freshSettings)
+        freshMenuBar.buildMenu(for: freshDelegate.statusItem!)
+
+        let menu = freshDelegate.statusItem!.menu!
+        guard let locationsItem = menu.items.first(where: { $0.title == "Locations" }),
+              let submenu = locationsItem.submenu else {
+            XCTFail("Locations submenu not found"); return
+        }
+
+        let autoItem = submenu.items.first
+        XCTAssertEqual(autoItem?.state, NSControl.StateValue.off, "Auto should be unchecked when a saved location is active")
+
+        let parisItem = submenu.items.first(where: { $0.title == "Paris" })
+        XCTAssertNotNil(parisItem)
+        XCTAssertEqual(parisItem?.state, NSControl.StateValue.on)
+
+        freshMenuBar.syncLocationsSubmenu()
+        let updatedSubmenu = locationsItem.submenu
+        let updatedAutoItem = updatedSubmenu?.items.first
+        XCTAssertEqual(updatedAutoItem?.state, NSControl.StateValue.off, "Auto still unchecked after sync")
+        let updatedParisItem = updatedSubmenu?.items.first(where: { $0.title == "Paris" })
+        XCTAssertEqual(updatedParisItem?.state, NSControl.StateValue.on)
+
+        _ = freshMenuBar
+        _ = freshDelegate
+        _ = freshManager
+        _ = freshSettings
+    }
+
+    func testLocationsSubmenu_activeLocationIsChecked() {
+        let paris = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        let london = SavedLocation(id: UUID(), name: "London", latitude: 51.5074, longitude: -0.1278)
+        weatherManager.savedLocations = [paris, london]
+        weatherManager.activeLocationId = paris.id
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        let menu = appDelegate.statusItem!.menu!
+
+        guard let locationsItem = menu.items.first(where: { $0.title == "Locations" }),
+              let submenu = locationsItem.submenu else {
+            XCTFail("Locations submenu not found"); return
+        }
+
+        let parisItem = submenu.items.first(where: { $0.title == "Paris" })
+        let londonItem = submenu.items.first(where: { $0.title == "London" })
+        XCTAssertEqual(parisItem?.state, NSControl.StateValue.on)
+        XCTAssertEqual(londonItem?.state, NSControl.StateValue.off)
+    }
+
+    func testLocationsSubmenu_syncAfterAddingLocation() {
+        let saved = SavedLocation(id: UUID(), name: "Tokyo", latitude: 35.6762, longitude: 139.6503)
+        weatherManager.savedLocations = [saved]
+        weatherManager.activeLocationId = saved.id
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+
+        menuBarManager.syncLocationsSubmenu()
+        let menu = appDelegate.statusItem!.menu!
+
+        guard let locationsItem = menu.items.first(where: { $0.title == "Locations" }),
+              let submenu = locationsItem.submenu else {
+            XCTFail("Locations submenu not found"); return
+        }
+
+        let tokyoItem = submenu.items.first(where: { $0.title == "Tokyo" })
+        XCTAssertNotNil(tokyoItem)
+        XCTAssertEqual(tokyoItem?.state, NSControl.StateValue.on)
+        let autoItem = submenu.items.first
+        XCTAssertEqual(autoItem?.state, NSControl.StateValue.off)
     }
 }
 

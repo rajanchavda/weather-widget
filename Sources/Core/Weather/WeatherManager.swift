@@ -20,6 +20,12 @@ class WeatherManager: ObservableObject {
     @Published var aqiValue: Double? = nil
     @Published var aqiLabel: String = ""
 
+    @Published var savedLocations: [SavedLocation] = []
+    var currentHourIndex: Int = -1
+    @Published var activeLocationId: UUID? = nil
+
+    private let activeIdKey = "WeatherOverlay.activeLocationId"
+
     private var timer: AnyCancellable?
     private var fetchGeneration: Int = 0
     private let pathMonitor = NWPathMonitor()
@@ -28,6 +34,12 @@ class WeatherManager: ObservableObject {
     var manualLocation: ManualLocation? {
         get { ManualLocation.load() }
         set { ManualLocation.save(newValue) }
+    }
+
+    var currentPrecipitation: Double? {
+        guard currentHourIndex >= 0,
+              currentHourIndex < hourlyPrecipitation.count else { return nil }
+        return hourlyPrecipitation[currentHourIndex]
     }
 
     private let session: URLSession
@@ -39,6 +51,7 @@ class WeatherManager: ObservableObject {
             config.timeoutIntervalForResource = 5.0
             return URLSession(configuration: config)
         }()
+        loadSavedLocations()
     }
 
 #if swift(>=6.0)
@@ -53,6 +66,7 @@ class WeatherManager: ObservableObject {
 
     func start() {
         isPaused = false
+        loadSavedLocations()
         fetchWeather()
         startTimer()
         setupNetworkMonitoring()
@@ -97,6 +111,119 @@ class WeatherManager: ObservableObject {
             }
         }
         pathMonitor.start(queue: DispatchQueue.global(qos: .background))
+    }
+
+    // MARK: - Saved Location Management
+
+    private func loadSavedLocations() {
+        savedLocations = SavedLocation.loadAll()
+        if let idString = UserDefaults.standard.string(forKey: activeIdKey),
+           let id = UUID(uuidString: idString) {
+            activeLocationId = id
+        }
+        migrateLegacyManualLocation()
+        if let activeId = activeLocationId,
+           savedLocations.contains(where: { $0.id == activeId }) {
+            syncManualLocationFromActiveId()
+        } else {
+            activeLocationId = nil
+        }
+    }
+
+    private func migrateLegacyManualLocation() {
+        guard savedLocations.isEmpty else { return }
+        guard let legacy = ManualLocation.load() else { return }
+        let saved = SavedLocation(
+            id: UUID(),
+            name: legacy.name,
+            latitude: legacy.latitude,
+            longitude: legacy.longitude
+        )
+        savedLocations = [saved]
+        activeLocationId = saved.id
+        saveSavedLocations()
+        print("[WeatherManager] Migrated legacy manual location: \(legacy.name)")
+    }
+
+    private func saveSavedLocations() {
+        SavedLocation.saveAll(savedLocations)
+        if let id = activeLocationId {
+            UserDefaults.standard.set(id.uuidString, forKey: activeIdKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: activeIdKey)
+        }
+    }
+
+    private func syncManualLocationFromActiveId() {
+        guard let id = activeLocationId,
+              let location = savedLocations.first(where: { $0.id == id }) else {
+            manualLocation = nil
+            return
+        }
+        manualLocation = ManualLocation(
+            name: location.name,
+            latitude: location.latitude,
+            longitude: location.longitude
+        )
+    }
+
+    func switchToLocation(id: UUID?) {
+        guard let id = id, savedLocations.contains(where: { $0.id == id }) else {
+            switchToAutoLocation()
+            return
+        }
+        activeLocationId = id
+        syncManualLocationFromActiveId()
+        saveSavedLocations()
+        fetchWeather()
+    }
+
+    func switchToAutoLocation() {
+        activeLocationId = nil
+        manualLocation = nil
+        saveSavedLocations()
+        fetchWeather()
+    }
+
+    func addSavedLocation(_ location: SavedLocation) {
+        if savedLocations.contains(where: { $0.id == location.id }) { return }
+        if savedLocations.contains(where: { $0.name == location.name &&
+            abs($0.latitude - location.latitude) < 0.01 &&
+            abs($0.longitude - location.longitude) < 0.01 }) { return }
+        savedLocations.append(location)
+        saveSavedLocations()
+        activeLocationId = location.id
+        syncManualLocationFromActiveId()
+        fetchWeather()
+    }
+
+    func removeSavedLocation(id: UUID) {
+        savedLocations.removeAll { $0.id == id }
+        saveSavedLocations()
+        if activeLocationId == id {
+            activeLocationId = nil
+            manualLocation = nil
+        }
+        fetchWeather()
+    }
+
+    func saveCurrentAsSavedLocation() {
+        let locName = cityName
+        let lat: Double
+        let lon: Double
+        if let manual = manualLocation {
+            lat = manual.latitude
+            lon = manual.longitude
+        } else {
+            return
+        }
+        let newLocation = SavedLocation(
+            id: UUID(),
+            name: locName,
+            latitude: lat,
+            longitude: lon
+        )
+        addSavedLocation(newLocation)
     }
 
     func fetchWeather() {
@@ -145,6 +272,7 @@ class WeatherManager: ObservableObject {
                 self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
                 self.hourlyTimes = Array(weather.hourly.time.prefix(12))
                 self.hourlyPrecipitation = Array((weather.hourly.precipitation ?? []).prefix(12))
+                self.currentHourIndex = self.computeCurrentHourIndex(from: self.hourlyTimes)
                 self.cityName = city
                 self.isNight = weather.current.is_day == 0
                 self.lastUpdated = Date()
@@ -191,7 +319,8 @@ class WeatherManager: ObservableObject {
                     self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
                     self.hourlyTimes = Array(weather.hourly.time.prefix(12))
                     self.hourlyPrecipitation = Array((weather.hourly.precipitation ?? []).prefix(12))
-                    self.isNight = computeIsNightLocally()
+                    self.currentHourIndex = self.computeCurrentHourIndex(from: self.hourlyTimes)
+                    self.isNight = self.computeIsNightLocally()
                     self.lastUpdated = Date()
                     self.hasData = true
                     self.errorMessage = nil
@@ -285,6 +414,21 @@ class WeatherManager: ObservableObject {
             return first.name
         }()
         return ManualLocation(name: displayName, latitude: first.latitude, longitude: first.longitude)
+    }
+
+    private func computeCurrentHourIndex(from times: [String]) -> Int {
+        guard !times.isEmpty else { return -1 }
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd'T'HH:00"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone.current
+        let currentHourStr = df.string(from: Date())
+        for (i, timeStr) in times.enumerated() {
+            if timeStr == currentHourStr || timeStr.hasPrefix(currentHourStr) {
+                return i
+            }
+        }
+        return -1
     }
 
     private func computeIsNightLocally() -> Bool {
