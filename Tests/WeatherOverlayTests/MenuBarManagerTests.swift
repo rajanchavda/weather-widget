@@ -89,6 +89,13 @@ final class MenuBarManagerTests: XCTestCase {
         XCTAssertTrue(title.contains("🌧️"))
     }
 
+    func testStatusItemText_drizzle() {
+        menuBarManager.updateStatusItem(temp: 14.0, code: 51, city: "London", hasData: true, error: nil)
+
+        let title = appDelegate.statusItem?.button?.title ?? ""
+        XCTAssertTrue(title.contains("🌧️"), "Drizzle (code 51) should still show rain emoji")
+    }
+
     func testStatusItemText_snow() {
         menuBarManager.updateStatusItem(temp: -2.0, code: 73, city: "Oslo", hasData: true, error: nil)
 

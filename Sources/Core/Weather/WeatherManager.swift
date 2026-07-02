@@ -21,6 +21,7 @@ class WeatherManager: ObservableObject {
     @Published var aqiLabel: String = ""
 
     @Published var savedLocations: [SavedLocation] = []
+    var currentHourIndex: Int = -1
     @Published var activeLocationId: UUID? = nil
 
     private let activeIdKey = "WeatherOverlay.activeLocationId"
@@ -33,6 +34,12 @@ class WeatherManager: ObservableObject {
     var manualLocation: ManualLocation? {
         get { ManualLocation.load() }
         set { ManualLocation.save(newValue) }
+    }
+
+    var currentPrecipitation: Double? {
+        guard currentHourIndex >= 0,
+              currentHourIndex < hourlyPrecipitation.count else { return nil }
+        return hourlyPrecipitation[currentHourIndex]
     }
 
     private let session: URLSession
@@ -265,6 +272,7 @@ class WeatherManager: ObservableObject {
                 self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
                 self.hourlyTimes = Array(weather.hourly.time.prefix(12))
                 self.hourlyPrecipitation = Array((weather.hourly.precipitation ?? []).prefix(12))
+                self.currentHourIndex = self.computeCurrentHourIndex(from: self.hourlyTimes)
                 self.cityName = city
                 self.isNight = weather.current.is_day == 0
                 self.lastUpdated = Date()
@@ -311,7 +319,8 @@ class WeatherManager: ObservableObject {
                     self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
                     self.hourlyTimes = Array(weather.hourly.time.prefix(12))
                     self.hourlyPrecipitation = Array((weather.hourly.precipitation ?? []).prefix(12))
-                    self.isNight = computeIsNightLocally()
+                    self.currentHourIndex = self.computeCurrentHourIndex(from: self.hourlyTimes)
+                    self.isNight = self.computeIsNightLocally()
                     self.lastUpdated = Date()
                     self.hasData = true
                     self.errorMessage = nil
@@ -405,6 +414,21 @@ class WeatherManager: ObservableObject {
             return first.name
         }()
         return ManualLocation(name: displayName, latitude: first.latitude, longitude: first.longitude)
+    }
+
+    private func computeCurrentHourIndex(from times: [String]) -> Int {
+        guard !times.isEmpty else { return -1 }
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd'T'HH:00"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone.current
+        let currentHourStr = df.string(from: Date())
+        for (i, timeStr) in times.enumerated() {
+            if timeStr == currentHourStr || timeStr.hasPrefix(currentHourStr) {
+                return i
+            }
+        }
+        return -1
     }
 
     private func computeIsNightLocally() -> Bool {
