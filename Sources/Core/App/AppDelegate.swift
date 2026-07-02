@@ -113,6 +113,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         .sink { [weak self] in
             guard let self = self else { return }
             self.menuBarManager.updateStatusItem()
+            self.menuBarManager.syncLocationsSubmenu()
             self.notificationManager.evaluateAndNotify()
         }
         .store(in: &cancellables)
@@ -286,6 +287,10 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !onBattery || percent > 20 {
             userDisabledEco = false
+            if settings.ecoMode {
+                settings.ecoMode = false
+                settings.brightness = 1.0
+            }
         }
 
         if onBattery && percent <= 20 && !userDisabledEco {
@@ -416,6 +421,100 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func refreshWeather() {
         weatherManager.fetchWeather()
+    }
+
+    // MARK: - Multi-Location Management
+
+    @objc func switchToSavedLocation(_ sender: NSMenuItem) {
+        guard let saved = sender.representedObject as? SavedLocation else { return }
+        weatherManager.switchToLocation(id: saved.id)
+        menuBarManager.syncLocationsSubmenu()
+    }
+
+    @objc func switchToAutoLocation() {
+        weatherManager.switchToAutoLocation()
+        menuBarManager.syncLocationsSubmenu()
+    }
+
+    @objc func addLocation() {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.messageText = "Add Location"
+        alert.informativeText = "Enter a city name (e.g. \"Mumbai\", \"London\", \"New York\")."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Search")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        input.placeholderString = "City name"
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let query = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+
+        let manager = weatherManager
+        Task.detached {
+            do {
+                let match = try await manager.searchCity(query)
+                DispatchQueue.main.async {
+                    guard let self = AppDelegate.shared else { return }
+                    if let match = match {
+                        let saved = SavedLocation(
+                            id: UUID(),
+                            name: match.name,
+                            latitude: match.latitude,
+                            longitude: match.longitude
+                        )
+                        self.weatherManager.addSavedLocation(saved)
+                        self.menuBarManager.syncLocationsSubmenu()
+                        self.menuBarManager.updateStatusItem()
+                    } else {
+                        self.showLocationAlert("No match", "No city found matching \"\(query)\". Try a different spelling.")
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    AppDelegate.shared?.showLocationAlert("Search failed", error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    @objc func removeLocation() {
+        guard !weatherManager.savedLocations.isEmpty else {
+            showLocationAlert("No Saved Locations", "You haven't added any locations yet.")
+            return
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.messageText = "Remove Location"
+        alert.informativeText = "Select a location to remove:"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        for saved in weatherManager.savedLocations {
+            popup.addItem(withTitle: saved.name)
+            popup.lastItem?.representedObject = saved
+        }
+        alert.accessoryView = popup
+        alert.window.initialFirstResponder = popup
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        guard let selected = popup.selectedItem?.representedObject as? SavedLocation else { return }
+        weatherManager.removeSavedLocation(id: selected.id)
+        menuBarManager.syncLocationsSubmenu()
+        menuBarManager.updateStatusItem()
     }
 
     @objc func promptSetLocation() {

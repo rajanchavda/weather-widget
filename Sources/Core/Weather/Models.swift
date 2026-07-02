@@ -1,5 +1,28 @@
 import Foundation
 
+// MARK: - Saved Location (multi-city support)
+
+struct SavedLocation: Identifiable, Codable, Equatable {
+    let id: UUID
+    let name: String
+    let latitude: Double
+    let longitude: Double
+
+    private static let defaultsKey = "WeatherOverlay.savedLocations"
+
+    static func loadAll() -> [SavedLocation] {
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey) else { return [] }
+        return (try? JSONDecoder().decode([SavedLocation].self, from: data)) ?? []
+    }
+
+    static func saveAll(_ locations: [SavedLocation]) {
+        let defaults = UserDefaults.standard
+        if let data = try? JSONEncoder().encode(locations) {
+            defaults.set(data, forKey: defaultsKey)
+        }
+    }
+}
+
 // MARK: - Manual Location Override
 
 struct ManualLocation: Codable, Equatable {

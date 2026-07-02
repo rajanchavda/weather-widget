@@ -13,6 +13,9 @@ final class WeatherManagerTests: XCTestCase {
         URLProtocolMock.requestHandler = nil
         URLProtocolMock.responseDelay = 0
         URLProtocolMock.delayedURLs = []
+        UserDefaults.standard.removeObject(forKey: "WeatherOverlay.savedLocations")
+        UserDefaults.standard.removeObject(forKey: "WeatherOverlay.manualLocation")
+        UserDefaults.standard.removeObject(forKey: "WeatherOverlay.activeLocationId")
     }
 
     override func tearDown() async throws {
@@ -448,6 +451,180 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertEqual(manager.aqiLabel, "")
         XCTAssertEqual(manager.currentTemp, 22.5)
         XCTAssertTrue(manager.hasData)
+    }
+
+    // MARK: - Saved Locations
+
+    func testSavedLocations_initialState() {
+        let m = WeatherManager(session: .mock)
+        XCTAssertTrue(m.savedLocations.isEmpty)
+        XCTAssertNil(m.activeLocationId)
+    }
+
+    func testSavedLocations_addAndSwitch() async throws {
+        let weatherData = weatherJSON()
+        let fetchExpectation = expectation(description: "saved location fetch completes")
+
+        URLProtocolMock.requestHandler = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
+                XCTFail("Should not call geo API when saved location is active")
+                throw URLError(.badURL)
+            }
+            if urlString.contains("open-meteo.com") {
+                XCTAssertTrue(urlString.contains("48.8566"), "Should use Paris coordinates")
+                XCTAssertTrue(urlString.contains("2.3522"), "Should use Paris coordinates")
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherData)
+            }
+            fatalError("Unexpected request: \(urlString)")
+        }
+
+        let manager = WeatherManager(session: .mock)
+        let saved = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+
+        manager.$cityName
+            .dropFirst()
+            .sink { city in
+                if city == "Paris" {
+                    fetchExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        manager.addSavedLocation(saved)
+
+        await fulfillment(of: [fetchExpectation], timeout: 3.0)
+
+        XCTAssertEqual(manager.savedLocations.count, 1)
+        XCTAssertEqual(manager.savedLocations.first?.name, "Paris")
+        XCTAssertEqual(manager.activeLocationId, saved.id)
+        XCTAssertEqual(manager.cityName, "Paris")
+        XCTAssertTrue(manager.hasData)
+    }
+
+    func testSavedLocations_switchToAutoLocation() async throws {
+        let weatherData = weatherJSON()
+        let geoData = freeGeoJSON()
+
+        var geoCallCount = 0
+        URLProtocolMock.requestHandler = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
+                geoCallCount += 1
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, geoData)
+            }
+            if urlString.contains("open-meteo.com") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherData)
+            }
+            fatalError("Unexpected request: \(urlString)")
+        }
+
+        let manager = WeatherManager(session: .mock)
+        let saved = SavedLocation(id: UUID(), name: "London", latitude: 51.5074, longitude: -0.1278)
+        manager.addSavedLocation(saved)
+
+        let switchExpectation = expectation(description: "switch to auto completes")
+        manager.$hasData
+            .dropFirst()
+            .sink { hasData in
+                if hasData && geoCallCount > 0 {
+                    switchExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        manager.switchToAutoLocation()
+
+        await fulfillment(of: [switchExpectation], timeout: 3.0)
+
+        XCTAssertNil(manager.activeLocationId)
+        XCTAssertNil(manager.manualLocation)
+        XCTAssertTrue(manager.savedLocations.isEmpty == false)
+    }
+
+    func testSavedLocations_addDuplicateIgnored() {
+        let manager = WeatherManager(session: .mock)
+        let loc1 = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+
+        manager.addSavedLocation(loc1)
+        XCTAssertEqual(manager.savedLocations.count, 1)
+
+        let loc2 = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        manager.addSavedLocation(loc2)
+        XCTAssertEqual(manager.savedLocations.count, 1, "Duplicate coordinates should not be added")
+    }
+
+    func testSavedLocations_removeActiveFallsBackToAuto() async throws {
+        let weatherData = weatherJSON()
+        let geoData = freeGeoJSON()
+        let fetchExpectation = expectation(description: "fallback fetch after removal")
+
+        var geoCallCount = 0
+        URLProtocolMock.requestHandler = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
+                geoCallCount += 1
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, geoData)
+            }
+            if urlString.contains("open-meteo.com") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherData)
+            }
+            fatalError("Unexpected request: \(urlString)")
+        }
+
+        let manager = WeatherManager(session: .mock)
+        let saved = SavedLocation(id: UUID(), name: "Tokyo", latitude: 35.6762, longitude: 139.6503)
+        manager.addSavedLocation(saved)
+
+        manager.removeSavedLocation(id: saved.id)
+
+        XCTAssertTrue(manager.savedLocations.isEmpty)
+        XCTAssertNil(manager.activeLocationId)
+        XCTAssertNil(manager.manualLocation)
+
+        manager.$hasData
+            .dropFirst()
+            .sink { hasData in
+                if hasData {
+                    fetchExpectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        manager.fetchWeather()
+
+        await fulfillment(of: [fetchExpectation], timeout: 3.0)
+        XCTAssertTrue(manager.hasData)
+    }
+
+    func testSavedLocations_switchToNonexistentIdIsNoop() {
+        let manager = WeatherManager(session: .mock)
+        manager.switchToLocation(id: UUID())
+        XCTAssertNil(manager.activeLocationId)
+        XCTAssertNil(manager.manualLocation)
+    }
+
+    func testSavedLocations_saveCurrentAsSavedLocation() {
+        let manager = WeatherManager(session: .mock)
+        manager.cityName = "Mumbai"
+        manager.manualLocation = ManualLocation(name: "Mumbai", latitude: 19.0760, longitude: 72.8777)
+
+        manager.saveCurrentAsSavedLocation()
+
+        XCTAssertEqual(manager.savedLocations.count, 1)
+        XCTAssertEqual(manager.savedLocations.first?.name, "Mumbai")
+        XCTAssertEqual(manager.savedLocations.first?.latitude, 19.0760)
+        XCTAssertEqual(manager.activeLocationId, manager.savedLocations.first?.id)
+    }
+
+    func testSavedLocations_saveCurrentWithoutManualLocationDoesNothing() {
+        let manager = WeatherManager(session: .mock)
+        manager.cityName = "Paris"
+        manager.manualLocation = nil
+
+        manager.saveCurrentAsSavedLocation()
+
+        XCTAssertTrue(manager.savedLocations.isEmpty)
     }
 
     func testFetchWeather_withAQI_failure_clearsStaleValue() async throws {

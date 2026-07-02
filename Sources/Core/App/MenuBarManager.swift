@@ -33,13 +33,32 @@ class MenuBarManager {
         locationItem.isEnabled = false
         menu.addItem(locationItem)
 
-        let setLocationItem = NSMenuItem(title: "Set Location Manually...", action: #selector(AppDelegate.promptSetLocation), keyEquivalent: "")
-        setLocationItem.target = appDelegate
-        menu.addItem(setLocationItem)
+        let locationsSubmenu = NSMenu()
+        let autoItem = NSMenuItem(title: "Auto (IP-based)", action: #selector(AppDelegate.switchToAutoLocation), keyEquivalent: "")
+        autoItem.target = appDelegate
+        autoItem.state = weatherManager.activeLocationId == nil ? .on : .off
+        locationsSubmenu.addItem(autoItem)
 
-        let autoLocationItem = NSMenuItem(title: "Use Auto Location (IP-based)", action: #selector(AppDelegate.clearManualLocation), keyEquivalent: "")
-        autoLocationItem.target = appDelegate
-        menu.addItem(autoLocationItem)
+        for saved in weatherManager.savedLocations {
+            let item = NSMenuItem(title: saved.name, action: #selector(AppDelegate.switchToSavedLocation), keyEquivalent: "")
+            item.target = appDelegate
+            item.representedObject = saved
+            item.state = weatherManager.activeLocationId == saved.id ? .on : .off
+            locationsSubmenu.addItem(item)
+        }
+
+        locationsSubmenu.addItem(NSMenuItem.separator())
+        let addItem = NSMenuItem(title: "Add Location...", action: #selector(AppDelegate.addLocation), keyEquivalent: "")
+        addItem.target = appDelegate
+        locationsSubmenu.addItem(addItem)
+
+        let manageItem = NSMenuItem(title: "Remove Location...", action: #selector(AppDelegate.removeLocation), keyEquivalent: "")
+        manageItem.target = appDelegate
+        locationsSubmenu.addItem(manageItem)
+
+        let locationsMenuItem = NSMenuItem(title: "Locations", action: nil, keyEquivalent: "")
+        locationsMenuItem.submenu = locationsSubmenu
+        menu.addItem(locationsMenuItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -305,6 +324,7 @@ class MenuBarManager {
         }
 
         syncDisplayModeSubmenu()
+        syncLocationsSubmenu()
     }
 
     func syncUnitSubmenu() {
@@ -358,5 +378,37 @@ class MenuBarManager {
                 }
             }
         }
+    }
+
+    func syncLocationsSubmenu() {
+        guard let menu = appDelegate.statusItem?.menu else { return }
+        guard let locationsMenuItem = menu.items.first(where: { $0.title == "Locations" }) else { return }
+
+        let submenu = NSMenu()
+
+        let autoItem = NSMenuItem(title: "Auto (IP-based)", action: #selector(AppDelegate.switchToAutoLocation), keyEquivalent: "")
+        autoItem.target = appDelegate
+        autoItem.state = weatherManager.activeLocationId == nil ? .on : .off
+        submenu.addItem(autoItem)
+
+        for saved in weatherManager.savedLocations {
+            let item = NSMenuItem(title: saved.name, action: #selector(AppDelegate.switchToSavedLocation), keyEquivalent: "")
+            item.target = appDelegate
+            item.representedObject = saved
+            item.state = weatherManager.activeLocationId == saved.id ? .on : .off
+            submenu.addItem(item)
+        }
+
+        submenu.addItem(NSMenuItem.separator())
+
+        let addItem = NSMenuItem(title: "Add Location...", action: #selector(AppDelegate.addLocation), keyEquivalent: "")
+        addItem.target = appDelegate
+        submenu.addItem(addItem)
+
+        let manageItem = NSMenuItem(title: "Remove Location...", action: #selector(AppDelegate.removeLocation), keyEquivalent: "")
+        manageItem.target = appDelegate
+        submenu.addItem(manageItem)
+
+        locationsMenuItem.submenu = submenu
     }
 }
