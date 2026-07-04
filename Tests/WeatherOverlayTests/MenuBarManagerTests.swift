@@ -317,11 +317,21 @@ final class MenuBarManagerTests: XCTestCase {
         XCTAssertEqual(title, "🌤️ -- 🌱")
     }
 
+    private func findMenuItem(title: String, in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items {
+            if item.title == title { return item }
+            if let submenu = item.submenu, let found = findMenuItem(title: title, in: submenu) {
+                return found
+            }
+        }
+        return nil
+    }
+
     func testEcoModeMenuItemExists() {
         menuBarManager.buildMenu(for: appDelegate.statusItem!)
         let menu = appDelegate.statusItem!.menu!
 
-        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        let ecoItem = findMenuItem(title: "Eco Mode", in: menu)
         XCTAssertNotNil(ecoItem)
     }
 
@@ -330,7 +340,7 @@ final class MenuBarManagerTests: XCTestCase {
         menuBarManager.buildMenu(for: appDelegate.statusItem!)
         let menu = appDelegate.statusItem!.menu!
 
-        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        let ecoItem = findMenuItem(title: "Eco Mode", in: menu)
         XCTAssertEqual(ecoItem?.state, NSControl.StateValue.on)
     }
 
@@ -339,7 +349,7 @@ final class MenuBarManagerTests: XCTestCase {
         menuBarManager.buildMenu(for: appDelegate.statusItem!)
         let menu = appDelegate.statusItem!.menu!
 
-        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        let ecoItem = findMenuItem(title: "Eco Mode", in: menu)
         XCTAssertEqual(ecoItem?.state, NSControl.StateValue.off)
     }
 
@@ -347,7 +357,7 @@ final class MenuBarManagerTests: XCTestCase {
         menuBarManager.buildMenu(for: appDelegate.statusItem!)
         let menu = appDelegate.statusItem!.menu!
 
-        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        let ecoItem = findMenuItem(title: "Eco Mode", in: menu)
         XCTAssertTrue(ecoItem?.target is AppDelegate)
     }
 
@@ -355,7 +365,7 @@ final class MenuBarManagerTests: XCTestCase {
         menuBarManager.buildMenu(for: appDelegate.statusItem!)
         let menu = appDelegate.statusItem!.menu!
 
-        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        let ecoItem = findMenuItem(title: "Eco Mode", in: menu)
         XCTAssertEqual(ecoItem?.action, #selector(AppDelegate.toggleEcoMode))
     }
 
@@ -439,9 +449,7 @@ final class MenuBarManagerTests: XCTestCase {
 
     private func findAQIMenuItem() -> NSMenuItem? {
         guard let menu = appDelegate.statusItem?.menu else { return nil }
-        guard let displayModeItem = menu.items.first(where: { $0.title == "Status Bar Display" }),
-              let submenu = displayModeItem.submenu else { return nil }
-        return submenu.items.first(where: { $0.title == "Show Air Quality Index" })
+        return findMenuItem(title: "Show Air Quality Index", in: menu)
     }
 
     func testAQIToggleMenuItemExists() {
@@ -702,6 +710,19 @@ final class MenuBarManagerTests: XCTestCase {
         XCTAssertEqual(tokyoItem?.state, NSControl.StateValue.on)
         let autoItem = submenu.items.first
         XCTAssertEqual(autoItem?.state, NSControl.StateValue.off)
+    }
+
+    // MARK: - Delegate Tests
+    
+    func testMenuDelegatesAssigned() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        guard let menu = appDelegate.statusItem?.menu else {
+            XCTFail("Menu should exist")
+            return
+        }
+        
+        let auroraItem = findMenuItem(title: "Try Different Aurora", in: menu)
+        XCTAssertNotNil(auroraItem?.submenu?.delegate, "Aurora submenu delegate should be set")
     }
 }
 

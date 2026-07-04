@@ -64,56 +64,16 @@ class MenuBarManager {
         menu.addItem(locationsMenuItem)
 
         menu.addItem(NSMenuItem.separator())
-
+        
+        // 1. Appearance Submenu
+        let appearanceMenu = NSMenu()
+        
         let auroraToggle = NSMenuItem(title: "Atmospheric Aurora", action: #selector(AppDelegate.toggleAurora), keyEquivalent: "")
         auroraToggle.target = appDelegate
         auroraToggle.state = settings.showAurora ? .on : .off
         auroraToggle.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
-        menu.addItem(auroraToggle)
-
-        let alertToggle = NSMenuItem(title: "Weather Alerts", action: #selector(AppDelegate.toggleWeatherAlerts), keyEquivalent: "")
-        alertToggle.target = appDelegate
-        alertToggle.state = settings.showWeatherAlerts ? .on : .off
-        alertToggle.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
-        menu.addItem(alertToggle)
-
-        let lineToggle = NSMenuItem(title: "Bottom Forecast Line", action: #selector(AppDelegate.toggleBottomLine), keyEquivalent: "")
-        lineToggle.target = appDelegate
-        lineToggle.state = settings.showBottomLine ? .on : .off
-        lineToggle.image = NSImage(systemSymbolName: "chart.xyaxis.line", accessibilityDescription: nil)
-        menu.addItem(lineToggle)
-
-        let unitMenu = NSMenu()
-        for unit in OverlaySettings.WeatherUnit.allCases {
-            let item = NSMenuItem(title: "Use \(unit.rawValue)", action: #selector(AppDelegate.setWeatherUnit(_:)), keyEquivalent: "")
-            item.target = appDelegate
-            item.representedObject = unit
-            item.state = settings.selectedUnit == unit ? .on : .off
-            unitMenu.addItem(item)
-        }
-        let unitItem = NSMenuItem(title: "Temperature Unit", action: nil, keyEquivalent: "")
-        unitItem.image = NSImage(systemSymbolName: "thermometer", accessibilityDescription: nil)
-        unitItem.submenu = unitMenu
-        menu.addItem(unitItem)
-
-        let displayModeMenu = NSMenu()
-        for mode in OverlaySettings.StatusBarDisplayMode.allCases {
-            let item = NSMenuItem(title: mode.rawValue, action: #selector(AppDelegate.setDisplayMode(_:)), keyEquivalent: "")
-            item.target = appDelegate
-            item.representedObject = mode
-            item.state = settings.displayMode == mode ? .on : .off
-            displayModeMenu.addItem(item)
-        }
-        displayModeMenu.addItem(NSMenuItem.separator())
-        let aqiItem = NSMenuItem(title: "Show Air Quality Index", action: #selector(AppDelegate.toggleAQI), keyEquivalent: "")
-        aqiItem.target = appDelegate
-        aqiItem.state = settings.showAQI ? .on : .off
-        displayModeMenu.addItem(aqiItem)
-        let displayModeItem = NSMenuItem(title: "Status Bar Display", action: nil, keyEquivalent: "")
-        displayModeItem.image = NSImage(systemSymbolName: "menubar.rectangle", accessibilityDescription: nil)
-        displayModeItem.submenu = displayModeMenu
-        menu.addItem(displayModeItem)
-
+        appearanceMenu.addItem(auroraToggle)
+        
         let brightnessMenu = NSMenu()
         let brightnessLevels: [(String, Double)] = [
             ("100%", 1.0), ("75%", 0.75), ("50%", 0.5), ("25%", 0.25)
@@ -128,33 +88,108 @@ class MenuBarManager {
         let brightnessItem = NSMenuItem(title: "Brightness", action: nil, keyEquivalent: "")
         brightnessItem.image = NSImage(systemSymbolName: "sun.max.fill", accessibilityDescription: nil)
         brightnessItem.submenu = brightnessMenu
-        menu.addItem(brightnessItem)
-
-        let ecoToggle = NSMenuItem(title: "Eco Mode", action: #selector(AppDelegate.toggleEcoMode), keyEquivalent: "")
-        ecoToggle.target = appDelegate
-        ecoToggle.state = settings.ecoMode ? .on : .off
-        ecoToggle.image = NSImage(systemSymbolName: "leaf.fill", accessibilityDescription: nil)
-        menu.addItem(ecoToggle)
-
+        appearanceMenu.addItem(brightnessItem)
+        
         let auroraStyleMenu = NSMenu()
+        auroraStyleMenu.delegate = appDelegate
         for style in OverlaySettings.AuroraStyle.allCases {
             let item = NSMenuItem(title: style.rawValue, action: #selector(AppDelegate.setAuroraStyle(_:)), keyEquivalent: "")
             item.target = appDelegate
             item.representedObject = style
             item.state = isStyleSelected(style) ? .on : .off
+            
+            // Assign dynamic SF Symbols to Aurora Styles
+            switch style {
+            case .clearDay: item.image = NSImage(systemSymbolName: "sun.max.fill", accessibilityDescription: nil)
+            case .clearNight: item.image = NSImage(systemSymbolName: "moon.stars.fill", accessibilityDescription: nil)
+            case .cloudy: item.image = NSImage(systemSymbolName: "cloud.fill", accessibilityDescription: nil)
+            case .fog: item.image = NSImage(systemSymbolName: "cloud.fog.fill", accessibilityDescription: nil)
+            case .rain: item.image = NSImage(systemSymbolName: "cloud.rain.fill", accessibilityDescription: nil)
+            case .snow: item.image = NSImage(systemSymbolName: "snowflake", accessibilityDescription: nil)
+            case .thunderstorm: item.image = NSImage(systemSymbolName: "cloud.bolt.rain.fill", accessibilityDescription: nil)
+            case .auto: item.image = NSImage(systemSymbolName: "wand.and.stars", accessibilityDescription: nil)
+            }
+            
             auroraStyleMenu.addItem(item)
         }
         let auroraStyleItem = NSMenuItem(title: "Try Different Aurora", action: nil, keyEquivalent: "")
         auroraStyleItem.image = NSImage(systemSymbolName: "paintpalette.fill", accessibilityDescription: nil)
         auroraStyleItem.submenu = auroraStyleMenu
-        menu.addItem(auroraStyleItem)
-
+        appearanceMenu.addItem(auroraStyleItem)
+        
+        let appearanceItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
+        appearanceItem.image = NSImage(systemSymbolName: "paintpalette.fill", accessibilityDescription: nil)
+        appearanceItem.submenu = appearanceMenu
+        menu.addItem(appearanceItem)
+        
+        // 2. Menu Bar Layout Submenu
+        let layoutMenu = NSMenu()
+        
+        for mode in OverlaySettings.StatusBarDisplayMode.allCases {
+            let item = NSMenuItem(title: mode.rawValue, action: #selector(AppDelegate.setDisplayMode(_:)), keyEquivalent: "")
+            item.target = appDelegate
+            item.representedObject = mode
+            item.state = settings.displayMode == mode ? .on : .off
+            layoutMenu.addItem(item)
+        }
+        layoutMenu.addItem(NSMenuItem.separator())
+        
+        let aqiItem = NSMenuItem(title: "Show Air Quality Index", action: #selector(AppDelegate.toggleAQI), keyEquivalent: "")
+        aqiItem.target = appDelegate
+        aqiItem.state = settings.showAQI ? .on : .off
+        aqiItem.image = NSImage(systemSymbolName: "wind", accessibilityDescription: nil)
+        layoutMenu.addItem(aqiItem)
+        
+        let lineToggle = NSMenuItem(title: "Bottom Forecast Line", action: #selector(AppDelegate.toggleBottomLine), keyEquivalent: "")
+        lineToggle.target = appDelegate
+        lineToggle.state = settings.showBottomLine ? .on : .off
+        lineToggle.image = NSImage(systemSymbolName: "chart.xyaxis.line", accessibilityDescription: nil)
+        layoutMenu.addItem(lineToggle)
+        
+        let layoutItem = NSMenuItem(title: "Menu Bar Layout", action: nil, keyEquivalent: "")
+        layoutItem.image = NSImage(systemSymbolName: "menubar.rectangle", accessibilityDescription: nil)
+        layoutItem.submenu = layoutMenu
+        menu.addItem(layoutItem)
+        
+        // 3. Settings Submenu
+        let settingsMenu = NSMenu()
+        
+        let unitMenu = NSMenu()
+        for unit in OverlaySettings.WeatherUnit.allCases {
+            let item = NSMenuItem(title: "Use \(unit.rawValue)", action: #selector(AppDelegate.setWeatherUnit(_:)), keyEquivalent: "")
+            item.target = appDelegate
+            item.representedObject = unit
+            item.state = settings.selectedUnit == unit ? .on : .off
+            unitMenu.addItem(item)
+        }
+        let unitItem = NSMenuItem(title: "Temperature Unit", action: nil, keyEquivalent: "")
+        unitItem.image = NSImage(systemSymbolName: "thermometer", accessibilityDescription: nil)
+        unitItem.submenu = unitMenu
+        settingsMenu.addItem(unitItem)
+        
+        let alertToggle = NSMenuItem(title: "Weather Alerts", action: #selector(AppDelegate.toggleWeatherAlerts), keyEquivalent: "")
+        alertToggle.target = appDelegate
+        alertToggle.state = settings.showWeatherAlerts ? .on : .off
+        alertToggle.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
+        settingsMenu.addItem(alertToggle)
+        
+        let ecoToggle = NSMenuItem(title: "Eco Mode", action: #selector(AppDelegate.toggleEcoMode), keyEquivalent: "")
+        ecoToggle.target = appDelegate
+        ecoToggle.state = settings.ecoMode ? .on : .off
+        ecoToggle.image = NSImage(systemSymbolName: "leaf.fill", accessibilityDescription: nil)
+        settingsMenu.addItem(ecoToggle)
+        
         let launchToggle = NSMenuItem(title: "Launch at Login", action: #selector(AppDelegate.toggleLaunchAtLogin), keyEquivalent: "")
         launchToggle.target = appDelegate
         launchToggle.state = isLaunchAtLoginEnabled() ? .on : .off
         launchToggle.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
-        menu.addItem(launchToggle)
-
+        settingsMenu.addItem(launchToggle)
+        
+        let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
+        settingsItem.image = NSImage(systemSymbolName: "gearshape.fill", accessibilityDescription: nil)
+        settingsItem.submenu = settingsMenu
+        menu.addItem(settingsItem)
+        
         menu.addItem(NSMenuItem.separator())
 
         let resetItem = NSMenuItem(title: "Reset to Defaults", action: #selector(AppDelegate.resetToDefaults), keyEquivalent: "")
@@ -332,77 +367,48 @@ class MenuBarManager {
     func syncMenuStates() {
         guard let menu = appDelegate.statusItem?.menu else { return }
 
-        if let auroraItem = menu.items.first(where: { $0.action == #selector(AppDelegate.toggleAurora) }) {
+        if let auroraItem = findMenuItem(withAction: #selector(AppDelegate.toggleAurora), in: menu) {
             auroraItem.state = settings.showAurora ? .on : .off
         }
 
-        if let launchItem = menu.items.first(where: { $0.action == #selector(AppDelegate.toggleLaunchAtLogin) }) {
+        if let launchItem = findMenuItem(withAction: #selector(AppDelegate.toggleLaunchAtLogin), in: menu) {
             launchItem.state = isLaunchAtLoginEnabled() ? .on : .off
         }
 
-        if let lineItem = menu.items.first(where: { $0.action == #selector(AppDelegate.toggleBottomLine) }) {
+        if let lineItem = findMenuItem(withAction: #selector(AppDelegate.toggleBottomLine), in: menu) {
             lineItem.state = settings.showBottomLine ? .on : .off
         }
 
-        if let alertItem = menu.items.first(where: { $0.action == #selector(AppDelegate.toggleWeatherAlerts) }) {
+        if let alertItem = findMenuItem(withAction: #selector(AppDelegate.toggleWeatherAlerts), in: menu) {
             alertItem.state = settings.showWeatherAlerts ? .on : .off
         }
 
-        for item in menu.items where item.title == "Temperature Unit" {
-            if let submenu = item.submenu {
-                for unitItem in submenu.items {
-                    unitItem.state = (unitItem.representedObject as? OverlaySettings.WeatherUnit) == settings.selectedUnit ? .on : .off
-                }
-            }
-        }
-
-        for item in menu.items where item.title == "Brightness" {
-            if let submenu = item.submenu {
-                for brightnessItem in submenu.items {
-                    if let brightness = brightnessItem.representedObject as? Double {
-                        brightnessItem.state = abs(brightness - settings.brightness) < 0.01 ? .on : .off
-                    }
-                }
-            }
-        }
-
-        if let ecoItem = menu.items.first(where: { $0.action == #selector(AppDelegate.toggleEcoMode) }) {
+        if let ecoItem = findMenuItem(withAction: #selector(AppDelegate.toggleEcoMode), in: menu) {
             ecoItem.state = settings.ecoMode ? .on : .off
         }
 
-        for item in menu.items where item.title == "Try Different Aurora" {
-            if let submenu = item.submenu {
-                for styleItem in submenu.items {
-                    if let style = styleItem.representedObject as? OverlaySettings.AuroraStyle {
-                        styleItem.state = isStyleSelected(style) ? .on : .off
-                    }
-                }
-            }
-        }
-
+        syncUnitSubmenu()
+        syncBrightnessSubmenu()
+        syncAuroraStyleSubmenu()
         syncDisplayModeSubmenu()
         syncLocationsSubmenu()
     }
 
     func syncUnitSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
-        for item in menu.items where item.title == "Temperature Unit" {
-            if let submenu = item.submenu {
-                for unitItem in submenu.items {
-                    unitItem.state = (unitItem.representedObject as? OverlaySettings.WeatherUnit) == settings.selectedUnit ? .on : .off
-                }
+        if let item = findMenuItem(withTitle: "Temperature Unit", in: menu), let submenu = item.submenu {
+            for unitItem in submenu.items {
+                unitItem.state = (unitItem.representedObject as? OverlaySettings.WeatherUnit) == settings.selectedUnit ? .on : .off
             }
         }
     }
 
     func syncBrightnessSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
-        for item in menu.items where item.title == "Brightness" {
-            if let submenu = item.submenu {
-                for brightnessItem in submenu.items {
-                    if let brightness = brightnessItem.representedObject as? Double {
-                        brightnessItem.state = abs(brightness - settings.brightness) < 0.01 ? .on : .off
-                    }
+        if let item = findMenuItem(withTitle: "Brightness", in: menu), let submenu = item.submenu {
+            for brightnessItem in submenu.items {
+                if let brightness = brightnessItem.representedObject as? Double {
+                    brightnessItem.state = abs(brightness - settings.brightness) < 0.01 ? .on : .off
                 }
             }
         }
@@ -410,12 +416,10 @@ class MenuBarManager {
 
     func syncAuroraStyleSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
-        for item in menu.items where item.title == "Try Different Aurora" {
-            if let submenu = item.submenu {
-                for styleItem in submenu.items {
-                    if let style = styleItem.representedObject as? OverlaySettings.AuroraStyle {
-                        styleItem.state = isStyleSelected(style) ? .on : .off
-                    }
+        if let item = findMenuItem(withTitle: "Try Different Aurora", in: menu), let submenu = item.submenu {
+            for styleItem in submenu.items {
+                if let style = styleItem.representedObject as? OverlaySettings.AuroraStyle {
+                    styleItem.state = isStyleSelected(style) ? .on : .off
                 }
             }
         }
@@ -423,26 +427,26 @@ class MenuBarManager {
 
     func syncDisplayModeSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
-        for item in menu.items where item.title == "Status Bar Display" {
-            if let submenu = item.submenu {
-                for modeItem in submenu.items {
-                    if let mode = modeItem.representedObject as? OverlaySettings.StatusBarDisplayMode {
-                        modeItem.state = mode == settings.displayMode ? .on : .off
-                    }
-                }
-                if let aqiItem = submenu.items.first(where: { $0.action == #selector(AppDelegate.toggleAQI) }) {
-                    aqiItem.state = settings.showAQI ? .on : .off
+        if let item = findMenuItem(withTitle: "Status Bar Display", in: menu), let submenu = item.submenu {
+            for modeItem in submenu.items {
+                if let mode = modeItem.representedObject as? OverlaySettings.StatusBarDisplayMode {
+                    modeItem.state = mode == settings.displayMode ? .on : .off
                 }
             }
         }
+        if let aqiItem = findMenuItem(withAction: #selector(AppDelegate.toggleAQI), in: menu) {
+            aqiItem.state = settings.showAQI ? .on : .off
+        }
     }
+
 
     func syncLocationsSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
-        guard let locationsMenuItem = menu.items.first(where: { $0.title == "Locations" }) else { return }
-
-        let submenu = NSMenu()
-
+        
+        guard let locationsItem = findMenuItem(withTitle: "Locations", in: menu),
+              let submenu = locationsItem.submenu else { return }
+        
+        submenu.removeAllItems()
         let autoItem = NSMenuItem(title: "Auto (IP-based)", action: #selector(AppDelegate.switchToAutoLocation), keyEquivalent: "")
         autoItem.target = appDelegate
         autoItem.state = weatherManager.activeLocationId == nil ? .on : .off
@@ -466,6 +470,36 @@ class MenuBarManager {
         manageItem.target = appDelegate
         submenu.addItem(manageItem)
 
-        locationsMenuItem.submenu = submenu
+        locationsItem.submenu = submenu
+    }
+    
+    // MARK: - Helpers
+    
+    private func findMenuItem(withAction action: Selector, in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items {
+            if item.action == action {
+                return item
+            }
+            if let submenu = item.submenu {
+                if let found = findMenuItem(withAction: action, in: submenu) {
+                    return found
+                }
+            }
+        }
+        return nil
+    }
+
+    private func findMenuItem(withTitle title: String, in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items {
+            if item.title == title {
+                return item
+            }
+            if let submenu = item.submenu {
+                if let found = findMenuItem(withTitle: title, in: submenu) {
+                    return found
+                }
+            }
+        }
+        return nil
     }
 }
