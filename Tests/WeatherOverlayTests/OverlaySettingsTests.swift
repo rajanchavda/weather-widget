@@ -28,6 +28,11 @@ final class OverlaySettingsTests: XCTestCase {
         XCTAssertNil(settings.manualWeatherCode)
         XCTAssertNil(settings.manualIsNight)
         XCTAssertFalse(settings.showAQI)
+        
+        // Hover Preview State defaults
+        XCTAssertFalse(settings.isPreviewing)
+        XCTAssertNil(settings.previewWeatherCode)
+        XCTAssertNil(settings.previewIsNight)
     }
 
     func testBrightness_default() {
@@ -71,6 +76,17 @@ final class OverlaySettingsTests: XCTestCase {
 
         settings.manualIsNight = nil
         XCTAssertNil(settings.manualIsNight)
+    }
+    
+    func testPreviewStateChanges() {
+        settings.isPreviewing = true
+        XCTAssertTrue(settings.isPreviewing)
+        
+        settings.previewWeatherCode = 95
+        XCTAssertEqual(settings.previewWeatherCode, 95)
+        
+        settings.previewIsNight = true
+        XCTAssertEqual(settings.previewIsNight, true)
     }
 
     // MARK: - Eco Mode

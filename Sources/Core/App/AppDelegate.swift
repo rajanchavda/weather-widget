@@ -618,3 +618,28 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 }
+
+// MARK: - NSMenuDelegate
+extension AppDelegate: NSMenuDelegate {
+    public func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        guard let item = item, let style = item.representedObject as? OverlaySettings.AuroraStyle else {
+            settings.isPreviewing = false
+            return
+        }
+
+        settings.isPreviewing = true
+        settings.previewWeatherCode = style.weatherCode
+
+        if style == .clearDay {
+            settings.previewIsNight = false
+        } else if style == .clearNight {
+            settings.previewIsNight = true
+        } else if style == .auto {
+            settings.previewIsNight = nil
+        }
+    }
+
+    public func menuDidClose(_ menu: NSMenu) {
+        settings.isPreviewing = false
+    }
+}

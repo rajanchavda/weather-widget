@@ -47,6 +47,11 @@ struct OverlayView: View {
                             .id("fog-\(code)")
                     }
 
+                    if code >= 51 && code <= 55 {
+                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .drizzle, freezeDate: freezeDate)
+                            .id("rain-drizzle-\(code)")
+                    }
+
                     if code >= 56 && code <= 67 && (weatherManager.currentPrecipitation ?? 1) > 0 {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .light, freezeDate: freezeDate)
                             .id("rain-light-\(code)")
@@ -85,6 +90,8 @@ struct OverlayView: View {
         .animation(.easeInOut(duration: 0.5), value: settings.showBottomLine)
         .animation(.easeInOut(duration: 0.3), value: settings.brightness)
         .animation(.easeInOut(duration: 0.5), value: settings.manualWeatherCode)
+        .animation(.easeInOut(duration: 0.5), value: getEffectiveWeatherCode())
+        .animation(.easeInOut(duration: 0.5), value: checkIsNight())
         .onChange(of: getEffectiveWeatherCode()) { _ in
             if isEcoActive {
                 freezeTimestamp = Date()
@@ -96,14 +103,16 @@ struct OverlayView: View {
     }
 
     private func checkIsNight() -> Bool {
-        if let manualIsNight = settings.manualIsNight {
-            return manualIsNight
+        let isNight = settings.isPreviewing ? settings.previewIsNight : settings.manualIsNight
+        if let nightValue = isNight {
+            return nightValue
         }
         return weatherManager.isNight
     }
 
     private func getEffectiveWeatherCode() -> Int {
-        return settings.manualWeatherCode ?? weatherManager.weatherCode
+        let code = settings.isPreviewing ? settings.previewWeatherCode : settings.manualWeatherCode
+        return code ?? weatherManager.weatherCode
     }
 
     private func shouldShowStars() -> Bool {
@@ -112,7 +121,7 @@ struct OverlayView: View {
     }
 
     private func currentAuroraColors() -> [Color] {
-        let code = settings.manualWeatherCode ?? weatherManager.weatherCode
+        let code = getEffectiveWeatherCode()
         let isNight = checkIsNight()
         return getAuroraColors(weatherCode: code, isNight: isNight)
     }
