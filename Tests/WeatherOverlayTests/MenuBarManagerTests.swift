@@ -219,22 +219,31 @@ final class MenuBarManagerTests: XCTestCase {
     func testLocationTitleUpdate() {
         menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
 
-        let locationTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        let locationTitle = appDelegate.statusItem?.menu?.items[0].title ?? ""
         XCTAssertEqual(locationTitle, "Location: Tokyo")
+        
+        let conditionTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        XCTAssertEqual(conditionTitle, "Condition: 20.0°C • Clear Sky")
     }
 
     func testLocationTitleErrorState() {
         menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: "Timeout")
 
-        let locationTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        let locationTitle = appDelegate.statusItem?.menu?.items[0].title ?? ""
         XCTAssertEqual(locationTitle, "Error: Timeout")
+        
+        let conditionTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        XCTAssertEqual(conditionTitle, "Condition: --")
     }
 
     func testLocationTitleNoData() {
         menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: nil)
 
-        let locationTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        let locationTitle = appDelegate.statusItem?.menu?.items[0].title ?? ""
         XCTAssertEqual(locationTitle, "Location: Detecting...")
+        
+        let conditionTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        XCTAssertEqual(conditionTitle, "Condition: --")
     }
 
     // MARK: - Temperature Rounding
@@ -702,7 +711,7 @@ class MockAppDelegate: AppDelegate {
         super.init()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem?.menu = NSMenu()
-        statusItem?.menu?.addItem(withTitle: "Weather Menu Bar Overlay", action: nil, keyEquivalent: "")
         statusItem?.menu?.addItem(withTitle: "Location: Detecting...", action: nil, keyEquivalent: "")
+        statusItem?.menu?.addItem(withTitle: "Condition: --", action: nil, keyEquivalent: "")
     }
 }

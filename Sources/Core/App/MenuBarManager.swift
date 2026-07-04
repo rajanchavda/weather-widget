@@ -25,13 +25,15 @@ class MenuBarManager {
     func buildMenu(for statusItem: NSStatusItem) {
         let menu = NSMenu()
 
-        let titleItem = NSMenuItem(title: "Weather Menu Bar Overlay", action: nil, keyEquivalent: "")
-        titleItem.isEnabled = false
-        menu.addItem(titleItem)
+
 
         let locationItem = NSMenuItem(title: "Location: Detecting...", action: nil, keyEquivalent: "")
         locationItem.isEnabled = false
         menu.addItem(locationItem)
+        
+        let conditionItem = NSMenuItem(title: "Condition: --", action: nil, keyEquivalent: "")
+        conditionItem.isEnabled = false
+        menu.addItem(conditionItem)
 
         let locationsSubmenu = NSMenu()
         let autoItem = NSMenuItem(title: "Auto (IP-based)", action: #selector(AppDelegate.switchToAutoLocation), keyEquivalent: "")
@@ -57,6 +59,7 @@ class MenuBarManager {
         locationsSubmenu.addItem(manageItem)
 
         let locationsMenuItem = NSMenuItem(title: "Locations", action: nil, keyEquivalent: "")
+        locationsMenuItem.image = NSImage(systemSymbolName: "mappin.and.ellipse", accessibilityDescription: nil)
         locationsMenuItem.submenu = locationsSubmenu
         menu.addItem(locationsMenuItem)
 
@@ -65,16 +68,19 @@ class MenuBarManager {
         let auroraToggle = NSMenuItem(title: "Atmospheric Aurora", action: #selector(AppDelegate.toggleAurora), keyEquivalent: "")
         auroraToggle.target = appDelegate
         auroraToggle.state = settings.showAurora ? .on : .off
+        auroraToggle.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: nil)
         menu.addItem(auroraToggle)
 
         let alertToggle = NSMenuItem(title: "Weather Alerts", action: #selector(AppDelegate.toggleWeatherAlerts), keyEquivalent: "")
         alertToggle.target = appDelegate
         alertToggle.state = settings.showWeatherAlerts ? .on : .off
+        alertToggle.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
         menu.addItem(alertToggle)
 
         let lineToggle = NSMenuItem(title: "Bottom Forecast Line", action: #selector(AppDelegate.toggleBottomLine), keyEquivalent: "")
         lineToggle.target = appDelegate
         lineToggle.state = settings.showBottomLine ? .on : .off
+        lineToggle.image = NSImage(systemSymbolName: "chart.xyaxis.line", accessibilityDescription: nil)
         menu.addItem(lineToggle)
 
         let unitMenu = NSMenu()
@@ -86,6 +92,7 @@ class MenuBarManager {
             unitMenu.addItem(item)
         }
         let unitItem = NSMenuItem(title: "Temperature Unit", action: nil, keyEquivalent: "")
+        unitItem.image = NSImage(systemSymbolName: "thermometer", accessibilityDescription: nil)
         unitItem.submenu = unitMenu
         menu.addItem(unitItem)
 
@@ -103,6 +110,7 @@ class MenuBarManager {
         aqiItem.state = settings.showAQI ? .on : .off
         displayModeMenu.addItem(aqiItem)
         let displayModeItem = NSMenuItem(title: "Status Bar Display", action: nil, keyEquivalent: "")
+        displayModeItem.image = NSImage(systemSymbolName: "menubar.rectangle", accessibilityDescription: nil)
         displayModeItem.submenu = displayModeMenu
         menu.addItem(displayModeItem)
 
@@ -118,12 +126,14 @@ class MenuBarManager {
             brightnessMenu.addItem(item)
         }
         let brightnessItem = NSMenuItem(title: "Brightness", action: nil, keyEquivalent: "")
+        brightnessItem.image = NSImage(systemSymbolName: "sun.max.fill", accessibilityDescription: nil)
         brightnessItem.submenu = brightnessMenu
         menu.addItem(brightnessItem)
 
         let ecoToggle = NSMenuItem(title: "Eco Mode", action: #selector(AppDelegate.toggleEcoMode), keyEquivalent: "")
         ecoToggle.target = appDelegate
         ecoToggle.state = settings.ecoMode ? .on : .off
+        ecoToggle.image = NSImage(systemSymbolName: "leaf.fill", accessibilityDescription: nil)
         menu.addItem(ecoToggle)
 
         let auroraStyleMenu = NSMenu()
@@ -135,36 +145,43 @@ class MenuBarManager {
             auroraStyleMenu.addItem(item)
         }
         let auroraStyleItem = NSMenuItem(title: "Try Different Aurora", action: nil, keyEquivalent: "")
+        auroraStyleItem.image = NSImage(systemSymbolName: "paintpalette.fill", accessibilityDescription: nil)
         auroraStyleItem.submenu = auroraStyleMenu
         menu.addItem(auroraStyleItem)
 
         let launchToggle = NSMenuItem(title: "Launch at Login", action: #selector(AppDelegate.toggleLaunchAtLogin), keyEquivalent: "")
         launchToggle.target = appDelegate
         launchToggle.state = isLaunchAtLoginEnabled() ? .on : .off
+        launchToggle.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
         menu.addItem(launchToggle)
 
         menu.addItem(NSMenuItem.separator())
 
         let resetItem = NSMenuItem(title: "Reset to Defaults", action: #selector(AppDelegate.resetToDefaults), keyEquivalent: "")
         resetItem.target = appDelegate
+        resetItem.image = NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: nil)
         menu.addItem(resetItem)
 
         menu.addItem(NSMenuItem.separator())
 
         let refreshItem = NSMenuItem(title: "Force Refresh Weather", action: #selector(AppDelegate.refreshWeather), keyEquivalent: "r")
         refreshItem.target = appDelegate
+        refreshItem.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)
         menu.addItem(refreshItem)
 
         let updateItem = NSMenuItem(title: "Check for Updates", action: #selector(AppDelegate.checkForUpdates), keyEquivalent: "")
         updateItem.target = appDelegate
+        updateItem.image = NSImage(systemSymbolName: "arrow.down.app", accessibilityDescription: nil)
         menu.addItem(updateItem)
 
         let aboutItem = NSMenuItem(title: "About Weather Overlay", action: #selector(AppDelegate.showAbout), keyEquivalent: "")
         aboutItem.target = appDelegate
+        aboutItem.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)
         menu.addItem(aboutItem)
 
         let quitItem = NSMenuItem(title: "Quit Weather Overlay", action: #selector(AppDelegate.quitApp), keyEquivalent: "q")
         quitItem.target = appDelegate
+        quitItem.image = NSImage(systemSymbolName: "xmark.circle", accessibilityDescription: nil)
         menu.addItem(quitItem)
 
         statusItem.menu = menu
@@ -218,7 +235,47 @@ class MenuBarManager {
         button.title = title + aqiSuffix + ecoSuffix + updateSuffix
 
         if let menu = appDelegate.statusItem?.menu, menu.items.count > 1 {
-            menu.items[1].title = locationTitle
+            menu.items[0].title = locationTitle
+            
+            let conditionString: String
+            if weatherManager.isPaused {
+                conditionString = "Condition: --"
+            } else if let _ = error {
+                conditionString = "Condition: --"
+            } else if !hasData {
+                conditionString = "Condition: --"
+            } else {
+                let desc = getWeatherDescription(code)
+                let displayedTemp: Double = settings.selectedUnit == .fahrenheit ? (temp * 9.0 / 5.0 + 32.0) : temp
+                let formattedTemp = String(format: "%.1f%@", displayedTemp, settings.selectedUnit.rawValue)
+                conditionString = "Condition: \(formattedTemp) • \(desc)"
+            }
+            menu.items[1].title = conditionString
+        }
+    }
+    
+    private func getWeatherDescription(_ code: Int) -> String {
+        switch code {
+        case 0: return "Clear Sky"
+        case 1: return "Mainly Clear"
+        case 2: return "Partly Cloudy"
+        case 3: return "Overcast"
+        case 45, 48: return "Fog"
+        case 51, 53, 55: return "Drizzle"
+        case 56, 57: return "Freezing Drizzle"
+        case 61: return "Light Rain"
+        case 63: return "Moderate Rain"
+        case 65: return "Heavy Rain"
+        case 66, 67: return "Freezing Rain"
+        case 71: return "Light Snow"
+        case 73: return "Moderate Snow"
+        case 75: return "Heavy Snow"
+        case 77: return "Snow Grains"
+        case 80, 81, 82: return "Rain Showers"
+        case 85, 86: return "Snow Showers"
+        case 95: return "Thunderstorm"
+        case 96, 99: return "Thunderstorm (Hail)"
+        default: return "Unknown"
         }
     }
 
