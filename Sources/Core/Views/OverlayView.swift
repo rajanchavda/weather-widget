@@ -47,6 +47,11 @@ struct OverlayView: View {
                             .id("fog-\(code)")
                     }
 
+                    if code >= 51 && code <= 55 {
+                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .drizzle, freezeDate: freezeDate)
+                            .id("rain-drizzle-\(code)")
+                    }
+
                     if code >= 56 && code <= 67 && (weatherManager.currentPrecipitation ?? 1) > 0 {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .light, freezeDate: freezeDate)
                             .id("rain-light-\(code)")
