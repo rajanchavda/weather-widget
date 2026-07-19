@@ -47,17 +47,22 @@ struct OverlayView: View {
                             .id("fog-\(code)")
                     }
 
-                    if code >= 56 && code <= 67 && (weatherManager.currentPrecipitation ?? 1) > 0 {
+                    if code >= 51 && code <= 55 && shouldShowRainAnimation() {
+                        RainView(width: geometry.size.width, height: geometry.size.height, intensity: .drizzle, freezeDate: freezeDate)
+                            .id("rain-drizzle-\(code)")
+                    }
+
+                    if code >= 56 && code <= 67 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .light, freezeDate: freezeDate)
                             .id("rain-light-\(code)")
                     }
 
-                    if code >= 80 && code <= 82 && (weatherManager.currentPrecipitation ?? 1) > 0 {
+                    if code >= 80 && code <= 82 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .medium, freezeDate: freezeDate)
                             .id("rain-medium-\(code)")
                     }
 
-                    if code >= 95 && code <= 99 && (weatherManager.currentPrecipitation ?? 1) > 0 {
+                    if code >= 95 && code <= 99 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .heavy, freezeDate: freezeDate)
                             .id("rain-heavy-\(code)")
                     }
@@ -85,6 +90,8 @@ struct OverlayView: View {
         .animation(.easeInOut(duration: 0.5), value: settings.showBottomLine)
         .animation(.easeInOut(duration: 0.3), value: settings.brightness)
         .animation(.easeInOut(duration: 0.5), value: settings.manualWeatherCode)
+        .animation(.easeInOut(duration: 0.5), value: getEffectiveWeatherCode())
+        .animation(.easeInOut(duration: 0.5), value: checkIsNight())
         .onChange(of: getEffectiveWeatherCode()) { _ in
             if isEcoActive {
                 freezeTimestamp = Date()
@@ -96,14 +103,22 @@ struct OverlayView: View {
     }
 
     private func checkIsNight() -> Bool {
-        if let manualIsNight = settings.manualIsNight {
-            return manualIsNight
+        let isNight = settings.isPreviewing ? settings.previewIsNight : settings.manualIsNight
+        if let nightValue = isNight {
+            return nightValue
         }
         return weatherManager.isNight
     }
 
     private func getEffectiveWeatherCode() -> Int {
-        return settings.manualWeatherCode ?? weatherManager.weatherCode
+        let code = settings.isPreviewing ? settings.previewWeatherCode : settings.manualWeatherCode
+        return code ?? weatherManager.weatherCode
+    }
+
+    /// Rain particles require precipitation, but aurora hover preview always shows them.
+    private func shouldShowRainAnimation() -> Bool {
+        if settings.isPreviewing { return true }
+        return (weatherManager.currentPrecipitation ?? 1) > 0
     }
 
     private func shouldShowStars() -> Bool {
@@ -112,7 +127,7 @@ struct OverlayView: View {
     }
 
     private func currentAuroraColors() -> [Color] {
-        let code = settings.manualWeatherCode ?? weatherManager.weatherCode
+        let code = getEffectiveWeatherCode()
         let isNight = checkIsNight()
         return getAuroraColors(weatherCode: code, isNight: isNight)
     }

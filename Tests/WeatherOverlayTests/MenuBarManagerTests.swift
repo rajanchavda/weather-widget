@@ -219,22 +219,31 @@ final class MenuBarManagerTests: XCTestCase {
     func testLocationTitleUpdate() {
         menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
 
-        let locationTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        let locationTitle = appDelegate.statusItem?.menu?.items[0].title ?? ""
         XCTAssertEqual(locationTitle, "Location: Tokyo")
+        
+        let conditionTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        XCTAssertEqual(conditionTitle, "Condition: 20.0°C • Clear Sky")
     }
 
     func testLocationTitleErrorState() {
         menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: "Timeout")
 
-        let locationTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        let locationTitle = appDelegate.statusItem?.menu?.items[0].title ?? ""
         XCTAssertEqual(locationTitle, "Error: Timeout")
+        
+        let conditionTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        XCTAssertEqual(conditionTitle, "Condition: --")
     }
 
     func testLocationTitleNoData() {
         menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: nil)
 
-        let locationTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        let locationTitle = appDelegate.statusItem?.menu?.items[0].title ?? ""
         XCTAssertEqual(locationTitle, "Location: Detecting...")
+        
+        let conditionTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        XCTAssertEqual(conditionTitle, "Condition: --")
     }
 
     // MARK: - Temperature Rounding
@@ -308,11 +317,21 @@ final class MenuBarManagerTests: XCTestCase {
         XCTAssertEqual(title, "🌤️ -- 🌱")
     }
 
+    private func findMenuItem(title: String, in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items {
+            if item.title == title { return item }
+            if let submenu = item.submenu, let found = findMenuItem(title: title, in: submenu) {
+                return found
+            }
+        }
+        return nil
+    }
+
     func testEcoModeMenuItemExists() {
         menuBarManager.buildMenu(for: appDelegate.statusItem!)
         let menu = appDelegate.statusItem!.menu!
 
-        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        let ecoItem = findMenuItem(title: "Eco Mode", in: menu)
         XCTAssertNotNil(ecoItem)
     }
 
@@ -321,7 +340,7 @@ final class MenuBarManagerTests: XCTestCase {
         menuBarManager.buildMenu(for: appDelegate.statusItem!)
         let menu = appDelegate.statusItem!.menu!
 
-        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        let ecoItem = findMenuItem(title: "Eco Mode", in: menu)
         XCTAssertEqual(ecoItem?.state, NSControl.StateValue.on)
     }
 
@@ -330,7 +349,7 @@ final class MenuBarManagerTests: XCTestCase {
         menuBarManager.buildMenu(for: appDelegate.statusItem!)
         let menu = appDelegate.statusItem!.menu!
 
-        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        let ecoItem = findMenuItem(title: "Eco Mode", in: menu)
         XCTAssertEqual(ecoItem?.state, NSControl.StateValue.off)
     }
 
@@ -338,7 +357,7 @@ final class MenuBarManagerTests: XCTestCase {
         menuBarManager.buildMenu(for: appDelegate.statusItem!)
         let menu = appDelegate.statusItem!.menu!
 
-        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        let ecoItem = findMenuItem(title: "Eco Mode", in: menu)
         XCTAssertTrue(ecoItem?.target is AppDelegate)
     }
 
@@ -346,7 +365,7 @@ final class MenuBarManagerTests: XCTestCase {
         menuBarManager.buildMenu(for: appDelegate.statusItem!)
         let menu = appDelegate.statusItem!.menu!
 
-        let ecoItem = menu.items.first(where: { $0.title == "Eco Mode" })
+        let ecoItem = findMenuItem(title: "Eco Mode", in: menu)
         XCTAssertEqual(ecoItem?.action, #selector(AppDelegate.toggleEcoMode))
     }
 
@@ -430,9 +449,7 @@ final class MenuBarManagerTests: XCTestCase {
 
     private func findAQIMenuItem() -> NSMenuItem? {
         guard let menu = appDelegate.statusItem?.menu else { return nil }
-        guard let displayModeItem = menu.items.first(where: { $0.title == "Status Bar Display" }),
-              let submenu = displayModeItem.submenu else { return nil }
-        return submenu.items.first(where: { $0.title == "Show Air Quality Index" })
+        return findMenuItem(title: "Show Air Quality Index", in: menu)
     }
 
     func testAQIToggleMenuItemExists() {
@@ -694,6 +711,42 @@ final class MenuBarManagerTests: XCTestCase {
         let autoItem = submenu.items.first
         XCTAssertEqual(autoItem?.state, NSControl.StateValue.off)
     }
+
+    // MARK: - Delegate Tests
+    
+    func testMenuDelegatesAssigned() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        guard let menu = appDelegate.statusItem?.menu else {
+            XCTFail("Menu should exist")
+            return
+        }
+        
+        let auroraItem = findMenuItem(title: "Try Different Aurora", in: menu)
+        XCTAssertNotNil(auroraItem?.submenu?.delegate, "Aurora submenu delegate should be set")
+    }
+
+    // MARK: - Menu Bar Layout Sync
+
+    func testSyncDisplayModeSubmenu_updatesCheckmarks() {
+        settings.displayMode = .iconAndTemp
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+
+        settings.displayMode = .tempOnly
+        menuBarManager.syncDisplayModeSubmenu()
+
+        let menu = appDelegate.statusItem!.menu!
+        let layoutItem = findMenuItem(title: "Menu Bar Layout", in: menu)
+        XCTAssertNotNil(layoutItem?.submenu, "Menu Bar Layout submenu must be findable for sync")
+
+        let tempOnlyItem = layoutItem?.submenu?.items.first(where: {
+            ($0.representedObject as? OverlaySettings.StatusBarDisplayMode) == .tempOnly
+        })
+        let iconAndTempItem = layoutItem?.submenu?.items.first(where: {
+            ($0.representedObject as? OverlaySettings.StatusBarDisplayMode) == .iconAndTemp
+        })
+        XCTAssertEqual(tempOnlyItem?.state, NSControl.StateValue.on)
+        XCTAssertEqual(iconAndTempItem?.state, NSControl.StateValue.off)
+    }
 }
 
 @MainActor
@@ -702,7 +755,13 @@ class MockAppDelegate: AppDelegate {
         super.init()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem?.menu = NSMenu()
-        statusItem?.menu?.addItem(withTitle: "Weather Menu Bar Overlay", action: nil, keyEquivalent: "")
-        statusItem?.menu?.addItem(withTitle: "Location: Detecting...", action: nil, keyEquivalent: "")
+
+        let locationItem = NSMenuItem(title: "Location: Detecting...", action: nil, keyEquivalent: "")
+        locationItem.tag = 1001
+        statusItem?.menu?.addItem(locationItem)
+
+        let conditionItem = NSMenuItem(title: "Condition: --", action: nil, keyEquivalent: "")
+        conditionItem.tag = 1002
+        statusItem?.menu?.addItem(conditionItem)
     }
 }

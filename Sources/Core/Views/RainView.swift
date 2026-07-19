@@ -14,11 +14,12 @@ struct RainView: View {
     }
 
     enum RainIntensity {
-        case light, medium, heavy
+        case drizzle, light, medium, heavy
 
         var dropCount: Int {
             switch self {
-            case .light: return 15
+            case .drizzle: return 5
+            case .light: return 10
             case .medium: return 25
             case .heavy: return 40
             }
@@ -26,9 +27,24 @@ struct RainView: View {
 
         var baseSpeed: Double {
             switch self {
+            case .drizzle: return 2.0
             case .light: return 0.9
             case .medium: return 0.7
             case .heavy: return 0.5
+            }
+        }
+
+        var baseHeight: Double {
+            switch self {
+            case .drizzle: return 3.0
+            default: return 6.0
+            }
+        }
+
+        var windSway: Double {
+            switch self {
+            case .drizzle: return 5.0
+            default: return 3.0
             }
         }
 
@@ -77,25 +93,60 @@ struct RainView: View {
             let y = progress * (Double(size.height) + 15) - 10
 
             let slantRatio = intensity.isThunderstorm ? -0.35 : 0.0
-            let windDrift = sin(time * 0.3 + Double(i)) * 3.0
+            let windDrift = sin(time * 0.3 + Double(i)) * intensity.windSway
             let x = baseX + windDrift + (y * slantRatio)
 
             let dropWidth = 1.0 * depthFactor
-            let dropHeight = (8.0 + Double((i * 13) % 6)) * depthFactor
+            let dropHeight = (intensity.baseHeight + Double((i * 13) % 6)) * depthFactor
             let dropOpacity = 0.5 + (depthFactor * 0.3)
 
             if progress < 0.9 {
-                var dropPath = Path()
                 let slantX = dropHeight * slantRatio
-                dropPath.move(to: CGPoint(x: x, y: y))
-                dropPath.addLine(to: CGPoint(x: x + slantX, y: y + dropHeight))
-
-                let rainColor = Color(red: 0.6, green: 0.75, blue: 0.95)
-                context.stroke(
-                    dropPath,
-                    with: .color(rainColor.opacity(dropOpacity)),
-                    style: StrokeStyle(lineWidth: dropWidth, lineCap: .round)
-                )
+                let length = sqrt(slantX * slantX + dropHeight * dropHeight)
+                let fallAngle = atan2(dropHeight, slantX)
+                
+                context.drawLayer { ctx in
+                    ctx.translateBy(x: x, y: y)
+                    ctx.rotate(by: .radians(fallAngle - .pi/2))
+                    
+                    var dropPath = Path()
+                    // 4K Realistic Water Droplet Shape (Teardrop)
+                    let radius = dropWidth * 0.85
+                    
+                    dropPath.move(to: CGPoint(x: 0, y: 0)) // Tail
+                    dropPath.addQuadCurve(
+                        to: CGPoint(x: radius, y: length - radius),
+                        control: CGPoint(x: radius * 0.7, y: length * 0.4)
+                    )
+                    dropPath.addArc(
+                        center: CGPoint(x: 0, y: length - radius),
+                        radius: radius,
+                        startAngle: .degrees(0),
+                        endAngle: .degrees(180),
+                        clockwise: false
+                    )
+                    dropPath.addQuadCurve(
+                        to: CGPoint(x: 0, y: 0),
+                        control: CGPoint(x: -radius * 0.7, y: length * 0.4)
+                    )
+                    
+                    let rainColor = Color(red: 0.6, green: 0.75, blue: 0.95)
+                    let gradient = Gradient(colors: [
+                        rainColor.opacity(0.0),
+                        rainColor.opacity(dropOpacity * 0.6),
+                        rainColor.opacity(dropOpacity)
+                    ])
+                    
+                    // Linear gradient simulates realistic 4K motion blur
+                    ctx.fill(
+                        dropPath,
+                        with: .linearGradient(
+                            gradient,
+                            startPoint: CGPoint(x: 0, y: 0),
+                            endPoint: CGPoint(x: 0, y: length)
+                        )
+                    )
+                }
             }
 
             if progress > 0.85 && progress < 1.0 {
@@ -103,22 +154,57 @@ struct RainView: View {
                 let splashY = Double(size.height) - 3
                 let splashX = baseX + windDrift + (splashY * slantRatio)
 
-                let splashColor = Color(red: 0.65, green: 0.8, blue: 1.0)
-
-                let splash1Size = 3.0 + splashProgress * 5.0
-                let splash1Opacity = (1.0 - splashProgress) * dropOpacity * 0.6
+                let splashColor = Color(red: 0.75, green: 0.85, blue: 1.0)
+                
+                // 1. 3D Perspective Base Ripple (Squashed Ellipse)
+                let rippleWidth = 4.0 + splashProgress * 12.0
+                let rippleHeight = 1.0 + splashProgress * 3.0
+                let rippleOpacity = (1.0 - splashProgress) * dropOpacity * 0.8
+                
+                // Soft impact glow
                 context.fill(
-                    Path(ellipseIn: CGRect(x: splashX - splash1Size/2, y: splashY - splash1Size/2, width: splash1Size, height: splash1Size)),
-                    with: .color(splashColor.opacity(splash1Opacity))
+                    Path(ellipseIn: CGRect(x: splashX - rippleWidth/2, y: splashY - rippleHeight/2, width: rippleWidth, height: rippleHeight)),
+                    with: .color(splashColor.opacity(rippleOpacity * 0.5))
                 )
-
-                if depthFactor > 0.9 && splashProgress > 0.3 {
-                    let rippleSize = 5.0 + (splashProgress - 0.3) * 6.0
-                    let rippleOpacity = (1.0 - splashProgress) * 0.3
+                
+                // Sharp expanding ripple ring
+                if splashProgress > 0.1 {
                     context.stroke(
-                        Path(ellipseIn: CGRect(x: splashX - rippleSize/2, y: splashY - rippleSize/2, width: rippleSize, height: rippleSize)),
+                        Path(ellipseIn: CGRect(x: splashX - rippleWidth/2, y: splashY - rippleHeight/2, width: rippleWidth, height: rippleHeight)),
                         with: .color(splashColor.opacity(rippleOpacity)),
                         lineWidth: 0.8
+                    )
+                }
+                
+                // 2. Center Rebounding Droplet ("Crown")
+                // Shoots up then decelerates
+                let reboundHeight = sin(splashProgress * .pi / 2.0) * 4.5
+                let reboundY = splashY - reboundHeight
+                let reboundSize = 1.5 * (1.0 - splashProgress * 0.5)
+                let reboundOpacity = (1.0 - splashProgress) * dropOpacity
+                
+                context.fill(
+                    Path(ellipseIn: CGRect(x: splashX - reboundSize/2, y: reboundY - reboundSize/2, width: reboundSize, height: reboundSize)),
+                    with: .color(splashColor.opacity(reboundOpacity))
+                )
+                
+                // 3. Side Splatter Particles (Foreground drops only)
+                if depthFactor > 1.0 {
+                    let spreadX = splashProgress * 5.0
+                    let spreadY = sin(splashProgress * .pi) * 2.5 // Arcs up and down
+                    let particleSize = 1.0
+                    let particleOpacity = (1.0 - splashProgress) * dropOpacity * 0.7
+                    
+                    // Left particle
+                    context.fill(
+                        Path(ellipseIn: CGRect(x: splashX - spreadX, y: splashY - spreadY, width: particleSize, height: particleSize)),
+                        with: .color(splashColor.opacity(particleOpacity))
+                    )
+                    
+                    // Right particle
+                    context.fill(
+                        Path(ellipseIn: CGRect(x: splashX + spreadX, y: splashY - spreadY, width: particleSize, height: particleSize)),
+                        with: .color(splashColor.opacity(particleOpacity))
                     )
                 }
             }

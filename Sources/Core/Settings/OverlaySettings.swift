@@ -12,6 +12,11 @@ class OverlaySettings: ObservableObject {
     @Published var showWeatherAlerts: Bool = true
     @Published var showAQI: Bool = false
 
+    // Hover Preview State
+    @Published var isPreviewing: Bool = false
+    @Published var previewWeatherCode: Int? = nil
+    @Published var previewIsNight: Bool? = nil
+
     enum StatusBarDisplayMode: String, CaseIterable {
         case iconAndTemp = "Icon + Temperature"
         case iconOnly = "Icon Only"

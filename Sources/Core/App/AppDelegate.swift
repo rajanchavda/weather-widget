@@ -389,14 +389,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func setAuroraStyle(_ sender: NSMenuItem) {
         if let style = sender.representedObject as? OverlaySettings.AuroraStyle {
             settings.manualWeatherCode = style.weatherCode
-
-            if style == .clearDay {
-                settings.manualIsNight = false
-            } else if style == .clearNight {
-                settings.manualIsNight = true
-            } else if style == .auto {
-                settings.manualIsNight = nil
-            }
+            settings.manualIsNight = nightOverride(for: style)
 
             menuBarManager.syncAuroraStyleSubmenu()
         }
@@ -413,6 +406,9 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         settings.ecoMode = false
         settings.showWeatherAlerts = true
         settings.showAQI = false
+        settings.isPreviewing = false
+        settings.previewWeatherCode = nil
+        settings.previewIsNight = nil
         userDisabledEco = false
 
         menuBarManager.syncMenuStates()
@@ -616,5 +612,37 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func quitApp() {
         NSApplication.shared.terminate(nil)
+    }
+}
+
+// MARK: - NSMenuDelegate
+extension AppDelegate: NSMenuDelegate {
+    public func menu(_ menu: NSMenu, willHighlight item: NSMenuItem?) {
+        guard let item = item, let style = item.representedObject as? OverlaySettings.AuroraStyle else {
+            clearPreviewState()
+            return
+        }
+
+        settings.isPreviewing = true
+        settings.previewWeatherCode = style.weatherCode
+        settings.previewIsNight = nightOverride(for: style)
+    }
+
+    public func menuDidClose(_ menu: NSMenu) {
+        clearPreviewState()
+    }
+
+    private func nightOverride(for style: OverlaySettings.AuroraStyle) -> Bool? {
+        switch style {
+        case .clearDay: return false
+        case .clearNight: return true
+        case .auto, .cloudy, .fog, .rain, .snow, .thunderstorm: return nil
+        }
+    }
+
+    private func clearPreviewState() {
+        settings.isPreviewing = false
+        settings.previewWeatherCode = nil
+        settings.previewIsNight = nil
     }
 }
