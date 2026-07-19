@@ -21,7 +21,7 @@ struct RainView: View {
             case .drizzle: return 5
             case .light: return 10
             case .medium: return 25
-            case .heavy: return 25
+            case .heavy: return 40
             }
         }
 
@@ -30,7 +30,7 @@ struct RainView: View {
             case .drizzle: return 2.0
             case .light: return 0.9
             case .medium: return 0.7
-            case .heavy: return 0.65
+            case .heavy: return 0.5
             }
         }
 

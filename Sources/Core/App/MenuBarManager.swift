@@ -7,6 +7,11 @@ class MenuBarManager {
     unowned let weatherManager: WeatherManager
     unowned let settings: OverlaySettings
 
+    private enum MenuTag: Int {
+        case location = 1001
+        case condition = 1002
+    }
+
     init(appDelegate: AppDelegate, weatherManager: WeatherManager, settings: OverlaySettings) {
         self.appDelegate = appDelegate
         self.weatherManager = weatherManager
@@ -29,10 +34,12 @@ class MenuBarManager {
 
         let locationItem = NSMenuItem(title: "Location: Detecting...", action: nil, keyEquivalent: "")
         locationItem.isEnabled = false
+        locationItem.tag = MenuTag.location.rawValue
         menu.addItem(locationItem)
         
         let conditionItem = NSMenuItem(title: "Condition: --", action: nil, keyEquivalent: "")
         conditionItem.isEnabled = false
+        conditionItem.tag = MenuTag.condition.rawValue
         menu.addItem(conditionItem)
 
         let locationsSubmenu = NSMenu()
@@ -118,7 +125,7 @@ class MenuBarManager {
         appearanceMenu.addItem(auroraStyleItem)
         
         let appearanceItem = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
-        appearanceItem.image = NSImage(systemSymbolName: "paintpalette.fill", accessibilityDescription: nil)
+        appearanceItem.image = NSImage(systemSymbolName: "eye.fill", accessibilityDescription: nil)
         appearanceItem.submenu = appearanceMenu
         menu.addItem(appearanceItem)
         
@@ -269,13 +276,15 @@ class MenuBarManager {
         let updateSuffix = appDelegate.isUpdateReady ? " ⚠️" : ""
         button.title = title + aqiSuffix + ecoSuffix + updateSuffix
 
-        if let menu = appDelegate.statusItem?.menu, menu.items.count > 1 {
-            menu.items[0].title = locationTitle
-            
+        if let menu = appDelegate.statusItem?.menu {
+            if let locationItem = findMenuItem(withTag: MenuTag.location.rawValue, in: menu) {
+                locationItem.title = locationTitle
+            }
+
             let conditionString: String
             if weatherManager.isPaused {
                 conditionString = "Condition: --"
-            } else if let _ = error {
+            } else if error != nil {
                 conditionString = "Condition: --"
             } else if !hasData {
                 conditionString = "Condition: --"
@@ -285,7 +294,9 @@ class MenuBarManager {
                 let formattedTemp = String(format: "%.1f%@", displayedTemp, settings.selectedUnit.rawValue)
                 conditionString = "Condition: \(formattedTemp) • \(desc)"
             }
-            menu.items[1].title = conditionString
+            if let conditionItem = findMenuItem(withTag: MenuTag.condition.rawValue, in: menu) {
+                conditionItem.title = conditionString
+            }
         }
     }
     
@@ -427,7 +438,7 @@ class MenuBarManager {
 
     func syncDisplayModeSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
-        if let item = findMenuItem(withTitle: "Status Bar Display", in: menu), let submenu = item.submenu {
+        if let item = findMenuItem(withTitle: "Menu Bar Layout", in: menu), let submenu = item.submenu {
             for modeItem in submenu.items {
                 if let mode = modeItem.representedObject as? OverlaySettings.StatusBarDisplayMode {
                     modeItem.state = mode == settings.displayMode ? .on : .off
@@ -496,6 +507,20 @@ class MenuBarManager {
             }
             if let submenu = item.submenu {
                 if let found = findMenuItem(withTitle: title, in: submenu) {
+                    return found
+                }
+            }
+        }
+        return nil
+    }
+
+    private func findMenuItem(withTag tag: Int, in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items {
+            if item.tag == tag {
+                return item
+            }
+            if let submenu = item.submenu {
+                if let found = findMenuItem(withTag: tag, in: submenu) {
                     return found
                 }
             }

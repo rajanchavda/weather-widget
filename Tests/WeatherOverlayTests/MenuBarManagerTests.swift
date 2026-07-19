@@ -724,6 +724,29 @@ final class MenuBarManagerTests: XCTestCase {
         let auroraItem = findMenuItem(title: "Try Different Aurora", in: menu)
         XCTAssertNotNil(auroraItem?.submenu?.delegate, "Aurora submenu delegate should be set")
     }
+
+    // MARK: - Menu Bar Layout Sync
+
+    func testSyncDisplayModeSubmenu_updatesCheckmarks() {
+        settings.displayMode = .iconAndTemp
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+
+        settings.displayMode = .tempOnly
+        menuBarManager.syncDisplayModeSubmenu()
+
+        let menu = appDelegate.statusItem!.menu!
+        let layoutItem = findMenuItem(title: "Menu Bar Layout", in: menu)
+        XCTAssertNotNil(layoutItem?.submenu, "Menu Bar Layout submenu must be findable for sync")
+
+        let tempOnlyItem = layoutItem?.submenu?.items.first(where: {
+            ($0.representedObject as? OverlaySettings.StatusBarDisplayMode) == .tempOnly
+        })
+        let iconAndTempItem = layoutItem?.submenu?.items.first(where: {
+            ($0.representedObject as? OverlaySettings.StatusBarDisplayMode) == .iconAndTemp
+        })
+        XCTAssertEqual(tempOnlyItem?.state, NSControl.StateValue.on)
+        XCTAssertEqual(iconAndTempItem?.state, NSControl.StateValue.off)
+    }
 }
 
 @MainActor
@@ -732,7 +755,13 @@ class MockAppDelegate: AppDelegate {
         super.init()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem?.menu = NSMenu()
-        statusItem?.menu?.addItem(withTitle: "Location: Detecting...", action: nil, keyEquivalent: "")
-        statusItem?.menu?.addItem(withTitle: "Condition: --", action: nil, keyEquivalent: "")
+
+        let locationItem = NSMenuItem(title: "Location: Detecting...", action: nil, keyEquivalent: "")
+        locationItem.tag = 1001
+        statusItem?.menu?.addItem(locationItem)
+
+        let conditionItem = NSMenuItem(title: "Condition: --", action: nil, keyEquivalent: "")
+        conditionItem.tag = 1002
+        statusItem?.menu?.addItem(conditionItem)
     }
 }

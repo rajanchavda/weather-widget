@@ -69,34 +69,59 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertNil(appDelegate.settings.previewWeatherCode)
         XCTAssertNil(appDelegate.settings.previewIsNight)
     }
+
+    func testMenuDelegate_highlightRainClearsStickyNight() {
+        let menu = NSMenu()
+        let nightItem = NSMenuItem(title: "Clear Night", action: nil, keyEquivalent: "")
+        nightItem.representedObject = OverlaySettings.AuroraStyle.clearNight
+        appDelegate.menu(menu, willHighlight: nightItem)
+        XCTAssertEqual(appDelegate.settings.previewIsNight, true)
+
+        let rainItem = NSMenuItem(title: "Rainy", action: nil, keyEquivalent: "")
+        rainItem.representedObject = OverlaySettings.AuroraStyle.rain
+        appDelegate.menu(menu, willHighlight: rainItem)
+
+        XCTAssertTrue(appDelegate.settings.isPreviewing)
+        XCTAssertEqual(appDelegate.settings.previewWeatherCode, 61)
+        XCTAssertNil(appDelegate.settings.previewIsNight)
+    }
     
     func testMenuDelegate_highlightNonAuroraStyle() {
         let menu = NSMenu()
         let item = NSMenuItem(title: "Other", action: nil, keyEquivalent: "")
         
         appDelegate.settings.isPreviewing = true
+        appDelegate.settings.previewWeatherCode = 95
+        appDelegate.settings.previewIsNight = true
         appDelegate.menu(menu, willHighlight: item)
         
-        // Should reset
         XCTAssertFalse(appDelegate.settings.isPreviewing)
+        XCTAssertNil(appDelegate.settings.previewWeatherCode)
+        XCTAssertNil(appDelegate.settings.previewIsNight)
     }
     
     func testMenuDelegate_highlightNilItem() {
         let menu = NSMenu()
         
         appDelegate.settings.isPreviewing = true
+        appDelegate.settings.previewWeatherCode = 0
         appDelegate.menu(menu, willHighlight: nil)
         
-        // Should reset
         XCTAssertFalse(appDelegate.settings.isPreviewing)
+        XCTAssertNil(appDelegate.settings.previewWeatherCode)
+        XCTAssertNil(appDelegate.settings.previewIsNight)
     }
     
     func testMenuDelegate_menuDidClose() {
         let menu = NSMenu()
         appDelegate.settings.isPreviewing = true
+        appDelegate.settings.previewWeatherCode = 95
+        appDelegate.settings.previewIsNight = true
         
         appDelegate.menuDidClose(menu)
         
         XCTAssertFalse(appDelegate.settings.isPreviewing)
+        XCTAssertNil(appDelegate.settings.previewWeatherCode)
+        XCTAssertNil(appDelegate.settings.previewIsNight)
     }
 }

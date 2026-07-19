@@ -47,22 +47,22 @@ struct OverlayView: View {
                             .id("fog-\(code)")
                     }
 
-                    if code >= 51 && code <= 55 {
+                    if code >= 51 && code <= 55 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .drizzle, freezeDate: freezeDate)
                             .id("rain-drizzle-\(code)")
                     }
 
-                    if code >= 56 && code <= 67 && (weatherManager.currentPrecipitation ?? 1) > 0 {
+                    if code >= 56 && code <= 67 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .light, freezeDate: freezeDate)
                             .id("rain-light-\(code)")
                     }
 
-                    if code >= 80 && code <= 82 && (weatherManager.currentPrecipitation ?? 1) > 0 {
+                    if code >= 80 && code <= 82 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .medium, freezeDate: freezeDate)
                             .id("rain-medium-\(code)")
                     }
 
-                    if code >= 95 && code <= 99 && (weatherManager.currentPrecipitation ?? 1) > 0 {
+                    if code >= 95 && code <= 99 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .heavy, freezeDate: freezeDate)
                             .id("rain-heavy-\(code)")
                     }
@@ -113,6 +113,12 @@ struct OverlayView: View {
     private func getEffectiveWeatherCode() -> Int {
         let code = settings.isPreviewing ? settings.previewWeatherCode : settings.manualWeatherCode
         return code ?? weatherManager.weatherCode
+    }
+
+    /// Rain particles require precipitation, but aurora hover preview always shows them.
+    private func shouldShowRainAnimation() -> Bool {
+        if settings.isPreviewing { return true }
+        return (weatherManager.currentPrecipitation ?? 1) > 0
     }
 
     private func shouldShowStars() -> Bool {
