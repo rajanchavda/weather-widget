@@ -14,6 +14,9 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     let settings = OverlaySettings()
     var isUpdateReady = false
     var userDisabledEco = false
+    /// True only when Eco Mode was turned on automatically by the battery monitor.
+    /// Manual Eco Mode is left alone when power state recovers.
+    var autoEnabledEco = false
     private var cancellables = Set<AnyCancellable>()
     private var batteryCheckTimer: Timer?
 
@@ -101,6 +104,13 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(activeSpaceDidChange),
+            name: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil
+        )
+
         print("[AppDelegate] Requesting notification authorization...")
         notificationManager.requestAuthorization()
 
@@ -150,7 +160,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
             window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue - 1)
             window.ignoresMouseEvents = true
-            window.collectionBehavior = [.canJoinAllSpaces]
+            // Avoid `.canJoinAllSpaces` so the overlay does not float over other apps'
+            // fullscreen spaces (e.g. VLC). `.moveToActiveSpace` keeps it on normal desktops.
+            // Do not use `.stationary` — it can keep high-level windows visible across
+            // fullscreen Space transitions.
+            window.collectionBehavior = [.moveToActiveSpace, .ignoresCycle]
 
             let hostingView = NSHostingView(rootView: OverlayView(weatherManager: weatherManager, settings: settings))
             window.contentView = hostingView
@@ -171,6 +185,18 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func screenParametersChanged() {
         triggerWindowRecreation()
+    }
+
+    @objc private func activeSpaceDidChange() {
+        // `moveToActiveSpace` does not reliably relocate these click-through overlay
+        // windows on desktop switches, so rebuild for the active Space. Screens with
+        // no menu bar (fullscreen) are skipped inside setupOverlayWindows().
+        // If geometry is mid-transition and nothing was created, retry after settle.
+        guard !weatherManager.isPaused else { return }
+        setupOverlayWindows()
+        if overlayWindows.isEmpty {
+            triggerWindowRecreation()
+        }
     }
 
     @objc private func screenDidUnlock() {
@@ -287,9 +313,13 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !onBattery || percent > 20 {
             userDisabledEco = false
-            if settings.ecoMode {
+            // Only auto-disable when Eco was turned on by the battery monitor.
+            if autoEnabledEco && settings.ecoMode {
                 settings.ecoMode = false
                 settings.brightness = 1.0
+                autoEnabledEco = false
+                menuBarManager.syncMenuStates()
+                menuBarManager.updateStatusItem()
             }
         }
 
@@ -298,6 +328,9 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
                 print("[AppDelegate] Battery \(percent)% — auto-enabling Eco Mode")
                 settings.ecoMode = true
                 settings.brightness = 0.50
+                autoEnabledEco = true
+                menuBarManager.syncMenuStates()
+                menuBarManager.updateStatusItem()
             }
         }
     }
@@ -306,26 +339,36 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         guard let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
             return (false, 100)
         }
-        guard let sources = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [[String: Any]] else {
+        guard let sources = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [AnyObject] else {
             return (false, 100)
         }
-        guard let ps = sources.first else {
-            return (false, 100)
+        for source in sources {
+            guard let description = IOPSGetPowerSourceDescription(blob, source)?.takeUnretainedValue() as? [String: Any] else {
+                continue
+            }
+            // Skip non-battery sources (UPS, etc.) when possible.
+            if let type = description[kIOPSTypeKey as String] as? String,
+               type != (kIOPSInternalBatteryType as String) {
+                continue
+            }
+            let onBattery = (description[kIOPSPowerSourceStateKey as String] as? String) == (kIOPSBatteryPowerValue as String)
+            let capacity = description[kIOPSMaxCapacityKey as String] as? Int ?? 100
+            let current = description[kIOPSCurrentCapacityKey as String] as? Int ?? 100
+            let percent = capacity > 0 ? (current * 100 / capacity) : 100
+            return (onBattery, percent)
         }
-        let onBattery = (ps[kIOPSPowerSourceStateKey] as? String) == kIOPSBatteryPowerValue
-        let capacity = ps[kIOPSMaxCapacityKey] as? Int ?? 100
-        let current = ps[kIOPSCurrentCapacityKey] as? Int ?? 100
-        let percent = capacity > 0 ? (current * 100 / capacity) : 100
-        return (onBattery, percent)
+        return (false, 100)
     }
 
     @objc func toggleEcoMode() {
         settings.ecoMode.toggle()
         if settings.ecoMode {
             userDisabledEco = false
+            autoEnabledEco = false // user-initiated; don't auto-clear on AC/high battery
             settings.brightness = 0.50
         } else {
             userDisabledEco = true
+            autoEnabledEco = false
         }
         if let item = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleEcoMode) }) {
             item.state = settings.ecoMode ? .on : .off
@@ -410,6 +453,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         settings.previewWeatherCode = nil
         settings.previewIsNight = nil
         userDisabledEco = false
+        autoEnabledEco = false
 
         menuBarManager.syncMenuStates()
         menuBarManager.updateStatusItem()

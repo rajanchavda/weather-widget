@@ -6,6 +6,8 @@ final class ModelsTests: XCTestCase {
     func testWeatherResponse_decoding() throws {
         let json = """
         {
+          "utc_offset_seconds": 3600,
+          "timezone": "Europe/London",
           "current": {
             "temperature_2m": 22.5,
             "weather_code": 0,
@@ -27,6 +29,8 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(response.hourly.time.count, 1)
         XCTAssertEqual(response.hourly.temperature_2m.first, 18.0)
         XCTAssertEqual(response.hourly.weather_code.first, 0)
+        XCTAssertEqual(response.utc_offset_seconds, 3600)
+        XCTAssertEqual(response.timezone, "Europe/London")
     }
 
     func testWeatherResponse_decodingNight() throws {

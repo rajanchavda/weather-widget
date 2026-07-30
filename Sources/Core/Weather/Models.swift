@@ -75,6 +75,8 @@ struct GeocodingResponse: Codable {
 struct WeatherResponse: Codable {
     let current: CurrentWeather
     let hourly: HourlyWeather
+    let utc_offset_seconds: Int?
+    let timezone: String?
 
     struct CurrentWeather: Codable {
         let temperature_2m: Double
