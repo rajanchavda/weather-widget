@@ -118,7 +118,7 @@ struct OverlayView: View {
     /// Rain particles require precipitation, but aurora hover preview always shows them.
     private func shouldShowRainAnimation() -> Bool {
         if settings.isPreviewing { return true }
-        return (weatherManager.currentPrecipitation ?? 1) > 0
+        return (weatherManager.currentPrecipitation ?? 0) > 0
     }
 
     private func shouldShowStars() -> Bool {

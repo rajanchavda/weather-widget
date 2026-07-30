@@ -124,4 +124,38 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertNil(appDelegate.settings.previewWeatherCode)
         XCTAssertNil(appDelegate.settings.previewIsNight)
     }
+
+    func testToggleEcoMode_marksAsUserInitiated() {
+        appDelegate.autoEnabledEco = true
+        appDelegate.settings.ecoMode = false
+
+        appDelegate.toggleEcoMode()
+
+        XCTAssertTrue(appDelegate.settings.ecoMode)
+        XCTAssertFalse(appDelegate.autoEnabledEco, "Manual Eco enable must not be auto-cleared on AC")
+        XCTAssertFalse(appDelegate.userDisabledEco)
+    }
+
+    func testToggleEcoMode_offSetsUserDisabledFlag() {
+        appDelegate.settings.ecoMode = true
+        appDelegate.autoEnabledEco = true
+
+        appDelegate.toggleEcoMode()
+
+        XCTAssertFalse(appDelegate.settings.ecoMode)
+        XCTAssertTrue(appDelegate.userDisabledEco)
+        XCTAssertFalse(appDelegate.autoEnabledEco)
+    }
+
+    func testResetToDefaults_clearsEcoFlags() {
+        appDelegate.userDisabledEco = true
+        appDelegate.autoEnabledEco = true
+        appDelegate.settings.ecoMode = true
+
+        appDelegate.resetToDefaults()
+
+        XCTAssertFalse(appDelegate.settings.ecoMode)
+        XCTAssertFalse(appDelegate.userDisabledEco)
+        XCTAssertFalse(appDelegate.autoEnabledEco)
+    }
 }

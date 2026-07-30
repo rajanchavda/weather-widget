@@ -22,9 +22,12 @@ class WeatherManager: ObservableObject {
 
     @Published var savedLocations: [SavedLocation] = []
     var currentHourIndex: Int = -1
+    /// UTC offset for the active forecast location (from Open-Meteo `timezone=auto`).
+    var forecastUtcOffsetSeconds: Int? = nil
     @Published var activeLocationId: UUID? = nil
 
     private let activeIdKey = "WeatherOverlay.activeLocationId"
+    private let hourlyWindowSize = 12
 
     private var timer: AnyCancellable?
     private var fetchGeneration: Int = 0
@@ -191,19 +194,19 @@ class WeatherManager: ObservableObject {
             abs($0.latitude - location.latitude) < 0.01 &&
             abs($0.longitude - location.longitude) < 0.01 }) { return }
         savedLocations.append(location)
-        saveSavedLocations()
         activeLocationId = location.id
         syncManualLocationFromActiveId()
+        saveSavedLocations()
         fetchWeather()
     }
 
     func removeSavedLocation(id: UUID) {
         savedLocations.removeAll { $0.id == id }
-        saveSavedLocations()
         if activeLocationId == id {
             activeLocationId = nil
             manualLocation = nil
         }
+        saveSavedLocations()
         fetchWeather()
     }
 
@@ -266,17 +269,7 @@ class WeatherManager: ObservableObject {
                     print("[WeatherManager] Discarding stale success result (gen=\(generation), current=\(self.fetchGeneration))")
                     return
                 }
-                self.currentTemp = weather.current.temperature_2m
-                self.weatherCode = weather.current.weather_code
-                self.hourlyTemps = Array(weather.hourly.temperature_2m.prefix(12))
-                self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
-                self.hourlyTimes = Array(weather.hourly.time.prefix(12))
-                self.hourlyPrecipitation = Array((weather.hourly.precipitation ?? []).prefix(12))
-                self.currentHourIndex = self.computeCurrentHourIndex(from: self.hourlyTimes)
-                self.cityName = city
-                self.isNight = weather.current.is_day == 0
-                self.lastUpdated = Date()
-                self.hasData = true
+                self.applyWeatherResponse(weather, cityName: city, useLocalNightFallback: false)
                 self.isFetching = false
                 print("[WeatherManager] fetchWeather() completed successfully.")
 
@@ -297,6 +290,10 @@ class WeatherManager: ObservableObject {
                     print("[WeatherManager] Air quality fetched: AQI=\(self.aqiValue ?? -1) \(self.aqiLabel)")
                 } catch {
                     print("[WeatherManager] AQI fetch failed (non-fatal): \(error.localizedDescription)")
+                    guard generation == self.fetchGeneration else {
+                        print("[WeatherManager] Discarding stale AQI error (gen=\(generation), current=\(self.fetchGeneration))")
+                        return
+                    }
                     self.aqiValue = nil
                     self.aqiLabel = ""
                 }
@@ -312,17 +309,7 @@ class WeatherManager: ObservableObject {
                         print("[WeatherManager] Discarding stale fallback result (gen=\(generation), current=\(self.fetchGeneration))")
                         return
                     }
-                    self.cityName = "London (Fallback)"
-                    self.currentTemp = weather.current.temperature_2m
-                    self.weatherCode = weather.current.weather_code
-                    self.hourlyTemps = Array(weather.hourly.temperature_2m.prefix(12))
-                    self.hourlyCodes = Array(weather.hourly.weather_code.prefix(12))
-                    self.hourlyTimes = Array(weather.hourly.time.prefix(12))
-                    self.hourlyPrecipitation = Array((weather.hourly.precipitation ?? []).prefix(12))
-                    self.currentHourIndex = self.computeCurrentHourIndex(from: self.hourlyTimes)
-                    self.isNight = self.computeIsNightLocally()
-                    self.lastUpdated = Date()
-                    self.hasData = true
+                    self.applyWeatherResponse(weather, cityName: "London (Fallback)", useLocalNightFallback: true)
                     self.errorMessage = nil
                     self.isFetching = false
                     print("[WeatherManager] Fallback completed.")
@@ -344,6 +331,10 @@ class WeatherManager: ObservableObject {
                         print("[WeatherManager] Air quality fetched (fallback): AQI=\(self.aqiValue ?? -1) \(self.aqiLabel)")
                     } catch {
                         print("[WeatherManager] AQI fetch failed (fallback, non-fatal): \(error.localizedDescription)")
+                        guard generation == self.fetchGeneration else {
+                            print("[WeatherManager] Discarding stale AQI error (gen=\(generation), current=\(self.fetchGeneration))")
+                            return
+                        }
                         self.aqiValue = nil
                         self.aqiLabel = ""
                     }
@@ -416,12 +407,95 @@ class WeatherManager: ObservableObject {
         return ManualLocation(name: displayName, latitude: first.latitude, longitude: first.longitude)
     }
 
-    private func computeCurrentHourIndex(from times: [String]) -> Int {
+    private func applyWeatherResponse(_ weather: WeatherResponse, cityName: String, useLocalNightFallback: Bool) {
+        let offset = weather.utc_offset_seconds
+        self.forecastUtcOffsetSeconds = offset
+        let window = sliceHourlyWindow(from: weather, utcOffsetSeconds: offset)
+
+        self.currentTemp = weather.current.temperature_2m
+        self.weatherCode = weather.current.weather_code
+        self.hourlyTemps = window.temps
+        self.hourlyCodes = window.codes
+        self.hourlyTimes = window.times
+        self.hourlyPrecipitation = window.precipitation
+        // Window is already aligned to "now", so current hour is index 0 when data exists.
+        self.currentHourIndex = window.times.isEmpty ? -1 : 0
+        self.cityName = cityName
+        if useLocalNightFallback {
+            self.isNight = computeIsNightLocally(utcOffsetSeconds: offset)
+        } else {
+            self.isNight = weather.current.is_day == 0
+        }
+        self.lastUpdated = Date()
+        self.hasData = true
+    }
+
+    /// Takes the next `hourlyWindowSize` hours starting at the location's current hour.
+    private func sliceHourlyWindow(
+        from weather: WeatherResponse,
+        utcOffsetSeconds: Int?
+    ) -> (temps: [Double], codes: [Int], times: [String], precipitation: [Double]) {
+        let times = weather.hourly.time
+        let temps = weather.hourly.temperature_2m
+        let codes = weather.hourly.weather_code
+        let precip = weather.hourly.precipitation ?? Array(repeating: 0.0, count: times.count)
+
+        let start = computeCurrentHourIndex(from: times, utcOffsetSeconds: utcOffsetSeconds)
+        let resolvedStart: Int
+        if start >= 0 {
+            resolvedStart = start
+        } else {
+            // If "now" isn't string-matched (clock skew / missing offset), keep the
+            // in-progress hour: any bucket whose end is still in the future.
+            resolvedStart = times.firstIndex(where: { timeStr in
+                guard let date = parseHourlyTime(timeStr, utcOffsetSeconds: utcOffsetSeconds) else { return false }
+                return date.addingTimeInterval(3600) > Date()
+            }) ?? max(0, times.count - hourlyWindowSize)
+        }
+
+        let end = min(resolvedStart + hourlyWindowSize, times.count)
+        guard resolvedStart < end else {
+            return ([], [], [], [])
+        }
+
+        return (
+            safeSlice(temps, from: resolvedStart, to: end),
+            safeSlice(codes, from: resolvedStart, to: end),
+            safeSlice(times, from: resolvedStart, to: end),
+            safeSlice(precip, from: resolvedStart, to: end)
+        )
+    }
+
+    private func safeSlice<T>(_ array: [T], from start: Int, to end: Int) -> [T] {
+        let lower = min(max(start, 0), array.count)
+        let upper = min(max(end, lower), array.count)
+        return Array(array[lower..<upper])
+    }
+
+    private func parseHourlyTime(_ timeStr: String, utcOffsetSeconds: Int?) -> Date? {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = timeZoneForForecast(utcOffsetSeconds: utcOffsetSeconds)
+        if let date = df.date(from: timeStr) { return date }
+
+        df.dateFormat = "yyyy-MM-dd'T'HH:00"
+        return df.date(from: timeStr)
+    }
+
+    private func timeZoneForForecast(utcOffsetSeconds: Int?) -> TimeZone {
+        if let offset = utcOffsetSeconds, let tz = TimeZone(secondsFromGMT: offset) {
+            return tz
+        }
+        return TimeZone.current
+    }
+
+    private func computeCurrentHourIndex(from times: [String], utcOffsetSeconds: Int? = nil) -> Int {
         guard !times.isEmpty else { return -1 }
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd'T'HH:00"
         df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = TimeZone.current
+        df.timeZone = timeZoneForForecast(utcOffsetSeconds: utcOffsetSeconds ?? forecastUtcOffsetSeconds)
         let currentHourStr = df.string(from: Date())
         for (i, timeStr) in times.enumerated() {
             if timeStr == currentHourStr || timeStr.hasPrefix(currentHourStr) {
@@ -431,8 +505,10 @@ class WeatherManager: ObservableObject {
         return -1
     }
 
-    private func computeIsNightLocally() -> Bool {
-        let hour = Calendar.current.component(.hour, from: Date())
+    private func computeIsNightLocally(utcOffsetSeconds: Int? = nil) -> Bool {
+        var calendar = Calendar.current
+        calendar.timeZone = timeZoneForForecast(utcOffsetSeconds: utcOffsetSeconds ?? forecastUtcOffsetSeconds)
+        let hour = calendar.component(.hour, from: Date())
         return hour < 6 || hour >= 20
     }
 
@@ -441,7 +517,8 @@ class WeatherManager: ObservableObject {
         let latStr = String(format: "%.6f", locale: posixLocale, lat)
         let lonStr = String(format: "%.6f", locale: posixLocale, lon)
 
-        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(latStr)&longitude=\(lonStr)&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code,precipitation&forecast_days=1&timezone=auto"
+        // forecast_days=2 so late-day requests still have a full 12-hour forward window.
+        let urlString = "https://api.open-meteo.com/v1/forecast?latitude=\(latStr)&longitude=\(lonStr)&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code,precipitation&forecast_days=2&timezone=auto"
 
         guard let url = URL(string: urlString) else {
             throw URLError(.badURL)

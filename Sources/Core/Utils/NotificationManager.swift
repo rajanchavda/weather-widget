@@ -24,33 +24,23 @@ class NotificationManager {
     func evaluateAndNotify() {
         guard authorized, settings.showWeatherAlerts else { return }
         guard weatherManager.hasData else { return }
-        guard weatherManager.hourlyCodes.count >= 1 else { return }
+        // Hourly window is aligned to the current hour at index 0; alerts look ahead from the next hour.
+        guard weatherManager.hourlyCodes.count >= 2 else { return }
 
-        let lookaheadCount = min(2, weatherManager.hourlyCodes.count)
+        let startIndex = 1
+        let endIndex = min(startIndex + 2, weatherManager.hourlyCodes.count)
 
-        for i in 0..<lookaheadCount {
+        for i in startIndex..<endIndex {
             let code = weatherManager.hourlyCodes[safe: i] ?? 0
             let timeStr = weatherManager.hourlyTimes[safe: i] ?? ""
             let precip = weatherManager.hourlyPrecipitation[safe: i] ?? 0
 
-            if (95...99).contains(code) {
-                notifyIfNeeded(emoji: "⛈", title: "Thunderstorm", time: timeStr)
-            } else if (61...67).contains(code) || (80...82).contains(code) {
-                if precip > 1.0 {
-                    notifyIfNeeded(emoji: "🌧", title: "Rain", time: timeStr)
-                }
-            } else if (56...57).contains(code) || (66...67).contains(code) {
-                notifyIfNeeded(emoji: "⚠️", title: "Freezing Rain", time: timeStr, bodySuffix: "— possible ice")
-            } else if (71...77).contains(code) || (85...86).contains(code) {
-                notifyIfNeeded(emoji: "❄️", title: "Snow", time: timeStr)
-            } else if (45...48).contains(code) {
-                notifyIfNeeded(emoji: "🌫", title: "Fog", time: timeStr)
-            }
+            guard let event = Self.alertEvent(forWeatherCode: code, precipitation: precip) else { continue }
+            notifyIfNeeded(emoji: event.emoji, title: event.title, time: timeStr, bodySuffix: event.bodySuffix)
         }
 
-        for i in 0..<lookaheadCount {
-            let temp = weatherManager.hourlyTemps[safe: i] ?? 0
-            guard temp <= 0 else { continue }
+        for i in startIndex..<endIndex {
+            guard let temp = weatherManager.hourlyTemps[safe: i], temp <= 0 else { continue }
             let timeStr = weatherManager.hourlyTimes[safe: i] ?? ""
             let key = "freezing:\(timeStr)"
             guard !alertedEvents.contains(key) else { continue }
@@ -72,6 +62,30 @@ class NotificationManager {
 
             schedule(content, id: key)
         }
+    }
+
+    /// Maps a WMO code (+ precip) to a weather alert. Freezing rain is classified before rain.
+    nonisolated static func alertEvent(
+        forWeatherCode code: Int,
+        precipitation precip: Double
+    ) -> (emoji: String, title: String, bodySuffix: String?)? {
+        if (95...99).contains(code) {
+            return ("⛈", "Thunderstorm", nil)
+        }
+        if (56...57).contains(code) || (66...67).contains(code) {
+            return ("⚠️", "Freezing Rain", "— possible ice")
+        }
+        if (61...65).contains(code) || (80...82).contains(code) {
+            guard precip > 1.0 else { return nil }
+            return ("🌧", "Rain", nil)
+        }
+        if (71...77).contains(code) || (85...86).contains(code) {
+            return ("❄️", "Snow", nil)
+        }
+        if (45...48).contains(code) {
+            return ("🌫", "Fog", nil)
+        }
+        return nil
     }
 
     private func notifyIfNeeded(emoji: String, title: String, time: String, bodySuffix: String? = nil) {
@@ -104,19 +118,32 @@ class NotificationManager {
     private func formatTime(_ iso: String) -> String {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = forecastTimeZone()
         guard let date = df.date(from: iso) else { return iso }
         let out = DateFormatter()
         out.dateFormat = "h:mm a"
+        out.timeZone = forecastTimeZone()
         return out.string(from: date)
     }
 
     private func minutesAway(_ iso: String) -> Int? {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = forecastTimeZone()
         guard let date = df.date(from: iso) else { return nil }
         let diff = date.timeIntervalSinceNow
         guard diff > 0 else { return nil }
         return Int(ceil(diff / 60))
+    }
+
+    private func forecastTimeZone() -> TimeZone {
+        if let offset = weatherManager.forecastUtcOffsetSeconds,
+           let tz = TimeZone(secondsFromGMT: offset) {
+            return tz
+        }
+        return TimeZone.current
     }
 }
 
