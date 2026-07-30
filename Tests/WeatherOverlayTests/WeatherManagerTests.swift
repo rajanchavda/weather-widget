@@ -79,13 +79,16 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertEqual(manager.currentTemp, 22.5)
         XCTAssertEqual(manager.weatherCode, 0)
         XCTAssertEqual(manager.hourlyTemps.count, 12)
-        XCTAssertEqual(manager.hourlyTemps.first, 18.0)
+        XCTAssertEqual(manager.currentHourIndex, 0, "Hourly window should start at the current hour")
+        XCTAssertFalse(manager.hourlyTimes.isEmpty)
+        XCTAssertEqual(manager.hourlyTemps.first, 22.5, "Current-hour slice should start with the marked current-hour temp")
         XCTAssertEqual(manager.cityName, "Paris")
         XCTAssertFalse(manager.isNight)
         XCTAssertTrue(manager.hasData)
         XCTAssertNil(manager.errorMessage)
         XCTAssertFalse(manager.isFetching)
         XCTAssertNotNil(manager.lastUpdated)
+        XCTAssertNotNil(manager.forecastUtcOffsetSeconds)
     }
 
     // MARK: - Geo Failure Falls Back to London
@@ -167,6 +170,7 @@ final class WeatherManagerTests: XCTestCase {
                 throw URLError(.badURL)
             }
             if urlString.contains("open-meteo.com") {
+                XCTAssertTrue(urlString.contains("forecast_days=2"), "Should request 2 forecast days for a full forward window")
                 XCTAssertTrue(urlString.contains("48.8566"), "Should use Paris coordinates")
                 XCTAssertTrue(urlString.contains("2.3522"), "Should use Paris coordinates")
                 return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherData)
@@ -347,7 +351,8 @@ final class WeatherManagerTests: XCTestCase {
         await fulfillment(of: [fetchExpectation], timeout: 3.0)
 
         XCTAssertEqual(manager.hourlyPrecipitation.count, 12)
-        XCTAssertEqual(manager.hourlyPrecipitation.first, 0.0)
+        XCTAssertEqual(manager.currentHourIndex, 0)
+        XCTAssertEqual(manager.currentPrecipitation, 0.0)
     }
 
     // MARK: - Night Detection
@@ -687,6 +692,42 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertNil(manager.manualLocation)
     }
 
+    func testSavedLocations_addPersistsActiveLocationId() {
+        let manager = WeatherManager(session: .mock)
+        let saved = SavedLocation(id: UUID(), name: "Tokyo", latitude: 35.6762, longitude: 139.6503)
+
+        URLProtocolMock.requestHandler = { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+        manager.addSavedLocation(saved)
+
+        XCTAssertEqual(
+            UserDefaults.standard.string(forKey: "WeatherOverlay.activeLocationId"),
+            saved.id.uuidString,
+            "activeLocationId must be persisted when adding a location"
+        )
+
+        let restored = WeatherManager(session: .mock)
+        XCTAssertEqual(restored.activeLocationId, saved.id)
+    }
+
+    func testSavedLocations_removeClearsPersistedActiveLocationId() {
+        let manager = WeatherManager(session: .mock)
+        let saved = SavedLocation(id: UUID(), name: "Tokyo", latitude: 35.6762, longitude: 139.6503)
+
+        URLProtocolMock.requestHandler = { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+        manager.addSavedLocation(saved)
+        manager.removeSavedLocation(id: saved.id)
+
+        XCTAssertNil(UserDefaults.standard.string(forKey: "WeatherOverlay.activeLocationId"))
+        XCTAssertNil(manager.activeLocationId)
+
+        let restored = WeatherManager(session: .mock)
+        XCTAssertNil(restored.activeLocationId)
+    }
+
     func testSavedLocations_saveCurrentAsSavedLocation() {
         let manager = WeatherManager(session: .mock)
         manager.cityName = "Mumbai"
@@ -751,6 +792,59 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertEqual(manager.currentTemp, 22.5)
     }
 
+    func testFetchWeather_staleAQIFailureDoesNotClearNewerValue() async throws {
+        let geoData = freeGeoJSON()
+        let weatherData = weatherJSON()
+        let aqiData = aqiJSON()
+
+        var aqiRequestCount = 0
+        let newerAQISet = expectation(description: "newer AQI value applied")
+
+        // Only delay the first (stale) AQI failure; the second succeeds immediately.
+        URLProtocolMock.requestHandler = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, geoData)
+            }
+            if urlString.contains("air-quality-api.open-meteo.com") {
+                aqiRequestCount += 1
+                if aqiRequestCount == 1 {
+                    URLProtocolMock.responseDelay = 0.35
+                    URLProtocolMock.delayedURLs = ["air-quality-api.open-meteo.com"]
+                    throw URLError(.badServerResponse)
+                }
+                URLProtocolMock.responseDelay = 0
+                URLProtocolMock.delayedURLs = []
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, aqiData)
+            }
+            if urlString.contains("open-meteo.com") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherData)
+            }
+            fatalError("Unexpected request: \(urlString)")
+        }
+
+        manager = WeatherManager(session: .mock)
+        manager.$aqiValue
+            .dropFirst()
+            .sink { value in
+                if value == 42 {
+                    newerAQISet.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        manager.fetchWeather() // gen 1 — AQI fails slowly
+        try await Task.sleep(nanoseconds: 50_000_000)
+        manager.fetchWeather() // gen 2 — AQI succeeds immediately
+
+        await fulfillment(of: [newerAQISet], timeout: 5.0)
+        // Wait long enough for the delayed stale failure to arrive (and be ignored).
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        XCTAssertEqual(manager.aqiValue, 42, "Stale AQI failure must not clear a newer successful AQI value")
+        XCTAssertEqual(manager.aqiLabel, "Moderate")
+    }
+
     // MARK: - JSON Fixtures
 
     private func freeGeoJSON() -> Data {
@@ -760,14 +854,43 @@ final class WeatherManagerTests: XCTestCase {
     }
 
     private func weatherJSON() -> Data {
-        """
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd'T'HH:00"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone.current
+
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfDay = calendar.startOfDay(for: now)
+        let currentHour = calendar.component(.hour, from: now)
+
+        var times: [String] = []
+        var temps: [String] = []
+        var codes: [String] = []
+        var precips: [String] = []
+
+        // 48 hours from local midnight so late-day slices still have 12 forward hours.
+        for i in 0..<48 {
+            guard let date = calendar.date(byAdding: .hour, value: i, to: startOfDay) else { continue }
+            times.append("\"\(df.string(from: date))\"")
+            // Mark the current hour with a distinctive temperature for assertions.
+            let temp = (i == currentHour) ? 22.5 : (18.0 + Double(i % 12) * 0.5)
+            temps.append(String(format: "%.1f", temp))
+            codes.append("0")
+            precips.append("0.0")
+        }
+
+        let offset = TimeZone.current.secondsFromGMT()
+        return """
         {
+          "utc_offset_seconds": \(offset),
+          "timezone": "\(TimeZone.current.identifier)",
           "current": { "temperature_2m": 22.5, "weather_code": 0, "is_day": 1 },
           "hourly": {
-            "time": ["2026-06-28T00:00","2026-06-28T01:00","2026-06-28T02:00","2026-06-28T03:00","2026-06-28T04:00","2026-06-28T05:00","2026-06-28T06:00","2026-06-28T07:00","2026-06-28T08:00","2026-06-28T09:00","2026-06-28T10:00","2026-06-28T11:00","2026-06-28T12:00","2026-06-28T13:00","2026-06-28T14:00"],
-            "temperature_2m": [18.0,17.5,16.8,16.2,15.9,16.5,18.1,20.0,22.1,24.3,25.8,26.9,27.5,27.8,27.2],
-            "weather_code": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-            "precipitation": [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+            "time": [\(times.joined(separator: ","))],
+            "temperature_2m": [\(temps.joined(separator: ","))],
+            "weather_code": [\(codes.joined(separator: ","))],
+            "precipitation": [\(precips.joined(separator: ","))]
           }
         }
         """.data(using: .utf8)!

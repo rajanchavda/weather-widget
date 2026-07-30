@@ -20,9 +20,11 @@ final class URLProtocolMock: URLProtocol {
             return
         }
 
+        let urlString = request.url?.absoluteString ?? ""
+
         do {
             let (response, data) = try handler(request)
-            let urlString = request.url?.absoluteString ?? ""
+            // Read delay after the handler so tests can configure it per-request.
             let shouldDelay = URLProtocolMock.delayedURLs.contains { urlString.contains($0) }
             let delay = shouldDelay ? URLProtocolMock.responseDelay : 0
 
@@ -39,7 +41,16 @@ final class URLProtocolMock: URLProtocol {
                 client?.urlProtocolDidFinishLoading(self)
             }
         } catch {
-            client?.urlProtocol(self, didFailWithError: error)
+            let shouldDelay = URLProtocolMock.delayedURLs.contains { urlString.contains($0) }
+            let delay = shouldDelay ? URLProtocolMock.responseDelay : 0
+            if delay > 0 {
+                DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self = self else { return }
+                    client?.urlProtocol(self, didFailWithError: error)
+                }
+            } else {
+                client?.urlProtocol(self, didFailWithError: error)
+            }
         }
     }
 
