@@ -147,6 +147,38 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertFalse(appDelegate.autoEnabledEco)
     }
 
+    func testToggleEcoMode_updatesNestedMenuCheckmark() {
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        appDelegate.statusItem = statusItem
+        appDelegate.menuBarManager.buildMenu(for: statusItem)
+        defer { NSStatusBar.system.removeStatusItem(statusItem) }
+
+        guard let menu = statusItem.menu,
+              let ecoItem = findMenuItem(title: "Eco Mode", in: menu) else {
+            return XCTFail("Eco Mode menu item should exist under Settings")
+        }
+
+        XCTAssertEqual(ecoItem.state, .off)
+
+        appDelegate.toggleEcoMode()
+        XCTAssertTrue(appDelegate.settings.ecoMode)
+        XCTAssertEqual(ecoItem.state, .on, "Manual Eco Mode toggle must check the nested Settings item")
+
+        appDelegate.toggleEcoMode()
+        XCTAssertFalse(appDelegate.settings.ecoMode)
+        XCTAssertEqual(ecoItem.state, .off, "Manual Eco Mode toggle must uncheck the nested Settings item")
+    }
+
+    private func findMenuItem(title: String, in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items {
+            if item.title == title { return item }
+            if let submenu = item.submenu, let found = findMenuItem(title: title, in: submenu) {
+                return found
+            }
+        }
+        return nil
+    }
+
     func testResetToDefaults_clearsEcoFlags() {
         appDelegate.userDisabledEco = true
         appDelegate.autoEnabledEco = true

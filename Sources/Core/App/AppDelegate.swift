@@ -370,10 +370,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             userDisabledEco = true
             autoEnabledEco = false
         }
-        if let item = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleEcoMode) }) {
-            item.state = settings.ecoMode ? .on : .off
-        }
-        menuBarManager.syncBrightnessSubmenu()
+        menuBarManager.syncMenuStates()
         menuBarManager.updateStatusItem()
     }
 
@@ -387,23 +384,17 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func toggleAurora() {
         settings.showAurora.toggle()
-        if let item = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleAurora) }) {
-            item.state = settings.showAurora ? .on : .off
-        }
+        menuBarManager.syncMenuStates()
     }
 
     @objc func toggleWeatherAlerts() {
         settings.showWeatherAlerts.toggle()
-        if let item = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleWeatherAlerts) }) {
-            item.state = settings.showWeatherAlerts ? .on : .off
-        }
+        menuBarManager.syncMenuStates()
     }
 
     @objc func toggleBottomLine() {
         settings.showBottomLine.toggle()
-        if let item = statusItem?.menu?.items.first(where: { $0.action == #selector(toggleBottomLine) }) {
-            item.state = settings.showBottomLine ? .on : .off
-        }
+        menuBarManager.syncMenuStates()
     }
 
     @objc func setWeatherUnit(_ sender: NSMenuItem) {
