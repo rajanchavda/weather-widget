@@ -8,11 +8,13 @@ final class AppDelegateTests: XCTestCase {
     
     override func setUp() {
         super.setUp()
+        OverlaySettings.removePersistedValues(from: .standard)
         appDelegate = AppDelegate()
     }
     
     override func tearDown() {
         appDelegate = nil
+        OverlaySettings.removePersistedValues(from: .standard)
         super.tearDown()
     }
     
@@ -147,6 +149,38 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertFalse(appDelegate.autoEnabledEco)
     }
 
+    func testToggleEcoMode_offRestoresPreviousBrightness() {
+        appDelegate.settings.brightness = 0.75
+
+        appDelegate.toggleEcoMode()
+        XCTAssertEqual(appDelegate.settings.brightness, 0.50)
+
+        appDelegate.toggleEcoMode()
+        XCTAssertEqual(appDelegate.settings.brightness, 0.75, "Leaving Eco Mode must restore the pre-Eco brightness")
+    }
+
+    func testToggleEcoMode_onDoesNotRaiseLowerBrightness() {
+        appDelegate.settings.brightness = 0.25
+
+        appDelegate.toggleEcoMode()
+        XCTAssertEqual(appDelegate.settings.brightness, 0.25, "Eco Mode must not brighten a dimmer setting")
+
+        appDelegate.toggleEcoMode()
+        XCTAssertEqual(appDelegate.settings.brightness, 0.25)
+    }
+
+    func testToggleEcoMode_offKeepsBrightnessChosenDuringEco() {
+        appDelegate.settings.brightness = 1.0
+        appDelegate.toggleEcoMode()
+
+        let item = NSMenuItem(title: "75%", action: nil, keyEquivalent: "")
+        item.representedObject = 0.75
+        appDelegate.setBrightness(item)
+
+        appDelegate.toggleEcoMode()
+        XCTAssertEqual(appDelegate.settings.brightness, 0.75, "A level picked during Eco Mode must not be overwritten")
+    }
+
     func testToggleEcoMode_updatesNestedMenuCheckmark() {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         appDelegate.statusItem = statusItem
@@ -169,6 +203,26 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertEqual(ecoItem.state, .off, "Manual Eco Mode toggle must uncheck the nested Settings item")
     }
 
+    func testEcoToggle_syncsBrightnessCheckmark_whenLocationSharesSubmenuTitle() {
+        let original = appDelegate.weatherManager.savedLocations
+        defer { appDelegate.weatherManager.savedLocations = original }
+        appDelegate.weatherManager.savedLocations = [SavedLocation(id: UUID(), name: "Brightness", latitude: 0, longitude: 0)]
+
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        appDelegate.statusItem = statusItem
+        appDelegate.menuBarManager.buildMenu(for: statusItem)
+        defer { NSStatusBar.system.removeStatusItem(statusItem) }
+
+        appDelegate.settings.brightness = 1.0
+        appDelegate.toggleEcoMode()
+
+        guard let menu = statusItem.menu,
+              let halfItem = findMenuItem(title: "50%", in: menu) else {
+            return XCTFail("50% brightness item should exist")
+        }
+        XCTAssertEqual(halfItem.state, .on, "Brightness submenu must sync even when a saved location is named \"Brightness\"")
+    }
+
     private func findMenuItem(title: String, in menu: NSMenu) -> NSMenuItem? {
         for item in menu.items {
             if item.title == title { return item }
@@ -177,6 +231,47 @@ final class AppDelegateTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    // MARK: - Settings Persistence
+
+    func testManualEcoMode_survivesRelaunchAndRestoresBrightness() {
+        appDelegate.settings.brightness = 0.75
+        appDelegate.toggleEcoMode()
+
+        let relaunched = AppDelegate()
+        XCTAssertTrue(relaunched.settings.ecoMode)
+        XCTAssertEqual(relaunched.settings.brightness, 0.50, "Eco Mode dims again after relaunch")
+
+        relaunched.toggleEcoMode()
+        XCTAssertEqual(relaunched.settings.brightness, 0.75, "Pre-Eco brightness must survive a relaunch")
+        XCTAssertFalse(AppDelegate().settings.ecoMode)
+    }
+
+    func testAutoEcoMode_isNotPersisted() {
+        appDelegate.settings.brightness = 0.75
+        // Mirrors the battery monitor, which sets these without a manual toggle.
+        appDelegate.settings.ecoMode = true
+        appDelegate.settings.brightness = 0.50
+        appDelegate.autoEnabledEco = true
+
+        let relaunched = AppDelegate()
+        XCTAssertFalse(relaunched.settings.ecoMode)
+        XCTAssertEqual(relaunched.settings.brightness, 0.75)
+    }
+
+    func testResetToDefaults_clearsPersistedSettings() {
+        appDelegate.settings.selectedUnit = .fahrenheit
+        appDelegate.settings.showAQI = true
+        appDelegate.toggleEcoMode()
+
+        appDelegate.resetToDefaults()
+
+        let relaunched = AppDelegate()
+        XCTAssertEqual(relaunched.settings.selectedUnit, .celsius)
+        XCTAssertFalse(relaunched.settings.showAQI)
+        XCTAssertFalse(relaunched.settings.ecoMode)
+        XCTAssertEqual(relaunched.settings.brightness, 1.0)
     }
 
     func testResetToDefaults_clearsEcoFlags() {

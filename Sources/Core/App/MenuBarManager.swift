@@ -10,6 +10,11 @@ class MenuBarManager {
     private enum MenuTag: Int {
         case location = 1001
         case condition = 1002
+        case locations = 1003
+        case brightness = 1004
+        case auroraStyle = 1005
+        case layout = 1006
+        case unit = 1007
     }
 
     init(appDelegate: AppDelegate, weatherManager: WeatherManager, settings: OverlaySettings) {
@@ -66,6 +71,7 @@ class MenuBarManager {
         locationsSubmenu.addItem(manageItem)
 
         let locationsMenuItem = NSMenuItem(title: "Locations", action: nil, keyEquivalent: "")
+        locationsMenuItem.tag = MenuTag.locations.rawValue
         locationsMenuItem.image = NSImage(systemSymbolName: "mappin.and.ellipse", accessibilityDescription: nil)
         locationsMenuItem.submenu = locationsSubmenu
         menu.addItem(locationsMenuItem)
@@ -93,6 +99,7 @@ class MenuBarManager {
             brightnessMenu.addItem(item)
         }
         let brightnessItem = NSMenuItem(title: "Brightness", action: nil, keyEquivalent: "")
+        brightnessItem.tag = MenuTag.brightness.rawValue
         brightnessItem.image = NSImage(systemSymbolName: "sun.max.fill", accessibilityDescription: nil)
         brightnessItem.submenu = brightnessMenu
         appearanceMenu.addItem(brightnessItem)
@@ -120,6 +127,7 @@ class MenuBarManager {
             auroraStyleMenu.addItem(item)
         }
         let auroraStyleItem = NSMenuItem(title: "Try Different Aurora", action: nil, keyEquivalent: "")
+        auroraStyleItem.tag = MenuTag.auroraStyle.rawValue
         auroraStyleItem.image = NSImage(systemSymbolName: "paintpalette.fill", accessibilityDescription: nil)
         auroraStyleItem.submenu = auroraStyleMenu
         appearanceMenu.addItem(auroraStyleItem)
@@ -154,6 +162,7 @@ class MenuBarManager {
         layoutMenu.addItem(lineToggle)
         
         let layoutItem = NSMenuItem(title: "Menu Bar Layout", action: nil, keyEquivalent: "")
+        layoutItem.tag = MenuTag.layout.rawValue
         layoutItem.image = NSImage(systemSymbolName: "menubar.rectangle", accessibilityDescription: nil)
         layoutItem.submenu = layoutMenu
         menu.addItem(layoutItem)
@@ -170,6 +179,7 @@ class MenuBarManager {
             unitMenu.addItem(item)
         }
         let unitItem = NSMenuItem(title: "Temperature Unit", action: nil, keyEquivalent: "")
+        unitItem.tag = MenuTag.unit.rawValue
         unitItem.image = NSImage(systemSymbolName: "thermometer", accessibilityDescription: nil)
         unitItem.submenu = unitMenu
         settingsMenu.addItem(unitItem)
@@ -407,7 +417,7 @@ class MenuBarManager {
 
     func syncUnitSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
-        if let item = findMenuItem(withTitle: "Temperature Unit", in: menu), let submenu = item.submenu {
+        if let item = findMenuItem(withTag: MenuTag.unit.rawValue, in: menu), let submenu = item.submenu {
             for unitItem in submenu.items {
                 unitItem.state = (unitItem.representedObject as? OverlaySettings.WeatherUnit) == settings.selectedUnit ? .on : .off
             }
@@ -416,7 +426,7 @@ class MenuBarManager {
 
     func syncBrightnessSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
-        if let item = findMenuItem(withTitle: "Brightness", in: menu), let submenu = item.submenu {
+        if let item = findMenuItem(withTag: MenuTag.brightness.rawValue, in: menu), let submenu = item.submenu {
             for brightnessItem in submenu.items {
                 if let brightness = brightnessItem.representedObject as? Double {
                     brightnessItem.state = abs(brightness - settings.brightness) < 0.01 ? .on : .off
@@ -427,7 +437,7 @@ class MenuBarManager {
 
     func syncAuroraStyleSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
-        if let item = findMenuItem(withTitle: "Try Different Aurora", in: menu), let submenu = item.submenu {
+        if let item = findMenuItem(withTag: MenuTag.auroraStyle.rawValue, in: menu), let submenu = item.submenu {
             for styleItem in submenu.items {
                 if let style = styleItem.representedObject as? OverlaySettings.AuroraStyle {
                     styleItem.state = isStyleSelected(style) ? .on : .off
@@ -438,7 +448,7 @@ class MenuBarManager {
 
     func syncDisplayModeSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
-        if let item = findMenuItem(withTitle: "Menu Bar Layout", in: menu), let submenu = item.submenu {
+        if let item = findMenuItem(withTag: MenuTag.layout.rawValue, in: menu), let submenu = item.submenu {
             for modeItem in submenu.items {
                 if let mode = modeItem.representedObject as? OverlaySettings.StatusBarDisplayMode {
                     modeItem.state = mode == settings.displayMode ? .on : .off
@@ -454,7 +464,7 @@ class MenuBarManager {
     func syncLocationsSubmenu() {
         guard let menu = appDelegate.statusItem?.menu else { return }
         
-        guard let locationsItem = findMenuItem(withTitle: "Locations", in: menu),
+        guard let locationsItem = findMenuItem(withTag: MenuTag.locations.rawValue, in: menu),
               let submenu = locationsItem.submenu else { return }
         
         submenu.removeAllItems()
@@ -484,6 +494,12 @@ class MenuBarManager {
         locationsItem.submenu = submenu
     }
     
+    func showUpdateAvailable(version: String) {
+        guard let menu = appDelegate.statusItem?.menu,
+              let item = findMenuItem(withAction: #selector(AppDelegate.checkForUpdates), in: menu) else { return }
+        item.title = "Update Available (v\(version))..."
+    }
+
     // MARK: - Helpers
     
     private func findMenuItem(withAction action: Selector, in menu: NSMenu) -> NSMenuItem? {
@@ -493,20 +509,6 @@ class MenuBarManager {
             }
             if let submenu = item.submenu {
                 if let found = findMenuItem(withAction: action, in: submenu) {
-                    return found
-                }
-            }
-        }
-        return nil
-    }
-
-    private func findMenuItem(withTitle title: String, in menu: NSMenu) -> NSMenuItem? {
-        for item in menu.items {
-            if item.title == title {
-                return item
-            }
-            if let submenu = item.submenu {
-                if let found = findMenuItem(withTitle: title, in: submenu) {
                     return found
                 }
             }
