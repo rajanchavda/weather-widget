@@ -201,6 +201,26 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertEqual(ecoItem.state, .off, "Manual Eco Mode toggle must uncheck the nested Settings item")
     }
 
+    func testEcoToggle_syncsBrightnessCheckmark_whenLocationSharesSubmenuTitle() {
+        let original = appDelegate.weatherManager.savedLocations
+        defer { appDelegate.weatherManager.savedLocations = original }
+        appDelegate.weatherManager.savedLocations = [SavedLocation(id: UUID(), name: "Brightness", latitude: 0, longitude: 0)]
+
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        appDelegate.statusItem = statusItem
+        appDelegate.menuBarManager.buildMenu(for: statusItem)
+        defer { NSStatusBar.system.removeStatusItem(statusItem) }
+
+        appDelegate.settings.brightness = 1.0
+        appDelegate.toggleEcoMode()
+
+        guard let menu = statusItem.menu,
+              let halfItem = findMenuItem(title: "50%", in: menu) else {
+            return XCTFail("50% brightness item should exist")
+        }
+        XCTAssertEqual(halfItem.state, .on, "Brightness submenu must sync even when a saved location is named \"Brightness\"")
+    }
+
     private func findMenuItem(title: String, in menu: NSMenu) -> NSMenuItem? {
         for item in menu.items {
             if item.title == title { return item }
