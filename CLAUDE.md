@@ -220,9 +220,11 @@ Publishers.Merge(
     weatherManager.objectWillChange.map { _ in () },
     settings.objectWillChange.map { _ in () }
 )
-.receive(on: RunLoop.main)
-.sink { [weak self] in self?.menuBarManager.updateStatusItem() }
+.debounce(for: .milliseconds(50), scheduler: RunLoop.main)
+.sink { /* update status item, sync locations submenu, evaluate alerts */ }
 ```
+
+The debounce coalesces the burst of changes from one fetch into a single refresh. Menu actions still update the status item directly, so clicks are not delayed.
 
 ## Code Conventions
 
