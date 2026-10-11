@@ -3,6 +3,7 @@ import SwiftUI
 import Combine
 import ServiceManagement
 import IOKit.ps
+import os
 
 @MainActor
 public class AppDelegate: NSObject, NSApplicationDelegate {
@@ -47,11 +48,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        print("[AppDelegate] applicationDidFinishLaunching started.")
+        Log.app.info("applicationDidFinishLaunching started.")
         NSApp.setActivationPolicy(.accessory)
         ProcessInfo.processInfo.disableAutomaticTermination("WeatherOverlayBackground")
 
-        print("[AppDelegate] Setting up status item and overlay windows...")
+        Log.app.info("Setting up status item and overlay windows...")
         menuBarManager.setup()
         setupOverlayWindows()
 
@@ -118,10 +119,10 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        print("[AppDelegate] Requesting notification authorization...")
+        Log.app.info("Requesting notification authorization...")
         notificationManager.requestAuthorization()
 
-        print("[AppDelegate] Subscribing to WeatherManager / settings change events...")
+        Log.app.info("Subscribing to WeatherManager / settings change events...")
         observeChanges { [weak self] in
             guard let self = self else { return }
             self.menuBarManager.updateStatusItem()
@@ -130,7 +131,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         }
         .store(in: &cancellables)
 
-        print("[AppDelegate] Starting the Weather Engine...")
+        Log.app.info("Starting the Weather Engine...")
         weatherManager.start()
 
         setupPowerMonitoring()
@@ -246,38 +247,38 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func screenDidUnlock() {
-        print("[AppDelegate] Screen unlocked notification received. Refreshing weather...")
+        Log.app.info("Screen unlocked notification received. Refreshing weather...")
         weatherManager.fetchWeather()
         triggerWindowRecreation()
     }
 
     @objc private func systemDidWake() {
-        print("[AppDelegate] System did wake notification received.")
+        Log.app.info("System did wake notification received.")
         resumeAll()
     }
 
     @objc private func systemWillSleep() {
-        print("[AppDelegate] System will sleep.")
+        Log.app.info("System will sleep.")
         pauseAll()
     }
 
     @objc private func displayDidSleep() {
-        print("[AppDelegate] Display did sleep.")
+        Log.app.info("Display did sleep.")
         pauseAll()
     }
 
     @objc private func displayDidWake() {
-        print("[AppDelegate] Display did wake.")
+        Log.app.info("Display did wake.")
         resumeAll()
     }
 
     @objc private func sessionDidResignActive() {
-        print("[AppDelegate] Session did resign active.")
+        Log.app.info("Session did resign active.")
         pauseAll()
     }
 
     @objc private func sessionDidBecomeActive() {
-        print("[AppDelegate] Session did become active.")
+        Log.app.info("Session did become active.")
         resumeAll()
     }
 
@@ -300,16 +301,16 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         if service.status == .enabled {
             do {
                 try service.unregister()
-                print("[AppDelegate] Unregistered login item successfully.")
+                Log.app.notice("Unregistered login item successfully.")
             } catch {
-                print("[AppDelegate] Failed to unregister login item: \(error)")
+                Log.app.error("Failed to unregister login item: \(String(describing: error), privacy: .public)")
             }
         } else {
             do {
                 try service.register()
-                print("[AppDelegate] Registered login item successfully.")
+                Log.app.notice("Registered login item successfully.")
             } catch {
-                print("[AppDelegate] Failed to register login item: \(error)")
+                Log.app.error("Failed to register login item: \(String(describing: error), privacy: .public)")
                 showLoginItemErrorAlert(error)
             }
         }
@@ -370,7 +371,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
         if onBattery && percent <= 20 && !userDisabledEco {
             if !settings.ecoMode {
-                print("[AppDelegate] Battery \(percent)% — auto-enabling Eco Mode")
+                Log.app.notice("Battery \(percent, privacy: .public)% — auto-enabling Eco Mode")
                 enterEcoMode()
                 autoEnabledEco = true
                 menuBarManager.syncMenuStates()
