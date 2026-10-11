@@ -661,10 +661,6 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         updateManager.performUpdateCheck(isUserInitiated: true)
     }
 
-    @objc func triggerRelaunch() {
-        updateManager.relaunchApp()
-    }
-
     private func performUpdateCheck(isUserInitiated: Bool) {
         updateManager.performUpdateCheck(isUserInitiated: isUserInitiated)
     }

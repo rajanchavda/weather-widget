@@ -25,7 +25,8 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 
 #### 1c. **UpdateManager** (`Sources/Core/App/UpdateManager.swift`)
 - Checks for new GitHub releases, runs Homebrew upgrade, relaunches the app
-- Supports silent background updates and explicit "Check for Updates" menu item
+- Background check at launch only flags the update in the menu ("Update Available (vX)..."); `brew upgrade` runs only after the user confirms
+- Background check is skipped outside an `.app` bundle (`swift run`)
 
 #### 1d. **NotificationManager** (`Sources/Core/Utils/NotificationManager.swift`)
 - `@MainActor` class managing `UserNotifications` for weather alerts
