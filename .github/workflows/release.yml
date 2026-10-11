@@ -53,6 +53,11 @@ jobs:
                 desc \"Ambient weather menu bar overlay for macOS\"
                 homepage \"https://github.com/rajanchavda/weather-widget\"
 
+                livecheck do
+                  url :url
+                  strategy :github_latest
+                end
+
                 app \"WeatherOverlay.app\"
 
                 postflight do
@@ -60,10 +65,7 @@ jobs:
                                  args: [\"-cr\", \"\#{appdir}/WeatherOverlay.app\"]
                 end
 
-                livecheck do
-                  url :url
-                  strategy :github_latest
-                end
+                zap trash: \"~/Library/Preferences/com.weatheroverlay.WeatherOverlay.plist\"
               end
             CASK
           "

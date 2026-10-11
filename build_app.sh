@@ -67,18 +67,23 @@ echo "Distribution archive created: ${ZIP_NAME}"
 echo "SHA-256 Checksum: ${SHA_VAL}"
 echo ""
 echo "========================================================================="
-echo "COPY-PASTE HOMEBREW CASK TEMPLATE (place in your homebrew-tap Casks/weatheroverlay.rb):"
+echo "HOMEBREW CASK (rajanchavda/homebrew-tap, Casks/weatheroverlay.rb)."
+echo "The release workflow generates and pushes this; keep the two in sync:"
 echo "========================================================================="
 cat <<EOF
 cask "weatheroverlay" do
   version "${VERSION}"
   sha256 "${SHA_VAL}"
 
-  # Replace <your-github-username> with your actual GitHub username
-  url "https://github.com/<your-github-username>/WeatherOverlay/releases/download/v#{version}/${ZIP_NAME}"
+  url "https://github.com/rajanchavda/weather-widget/releases/download/v#{version}/${ZIP_NAME}"
   name "WeatherOverlay"
   desc "Ambient weather menu bar overlay for macOS"
-  homepage "https://github.com/<your-github-username>/WeatherOverlay"
+  homepage "https://github.com/rajanchavda/weather-widget"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
 
   app "WeatherOverlay.app"
 
@@ -87,10 +92,7 @@ cask "weatheroverlay" do
                    args: ["-cr", "#{appdir}/WeatherOverlay.app"]
   end
 
-  # Allows cleanly uninstalling application leftovers
-  zap trash: [
-    "~/.gemini/antigravity-cli/brain/7fcdcce5-12c9-4da4-b893-a73781ca8854"
-  ]
+  zap trash: "~/Library/Preferences/com.weatheroverlay.WeatherOverlay.plist"
 end
 EOF
 echo "========================================================================="
