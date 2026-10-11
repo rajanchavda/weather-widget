@@ -1,16 +1,28 @@
 import Combine
+import Foundation
 
 class OverlaySettings: ObservableObject {
-    @Published var showAurora: Bool = true
-    @Published var showBottomLine: Bool = false
-    @Published var selectedUnit: WeatherUnit = .celsius
-    @Published var brightness: Double = 1.0
-    @Published var manualWeatherCode: Int? = nil
-    @Published var manualIsNight: Bool? = nil
-    @Published var displayMode: StatusBarDisplayMode = .iconAndTemp
-    @Published var ecoMode: Bool = false
-    @Published var showWeatherAlerts: Bool = true
-    @Published var showAQI: Bool = false
+    @Published var showAurora: Bool = true { didSet { save(showAurora, .showAurora) } }
+    @Published var showBottomLine: Bool = false { didSet { save(showBottomLine, .showBottomLine) } }
+    @Published var selectedUnit: WeatherUnit = .celsius { didSet { save(selectedUnit.rawValue, .selectedUnit) } }
+    @Published var brightness: Double = 1.0 {
+        didSet {
+            // Eco Mode dims temporarily; only the user's own level is stored.
+            if !ecoMode { save(brightness, .brightness) }
+        }
+    }
+    @Published var manualWeatherCode: Int? = nil { didSet { save(manualWeatherCode, .manualWeatherCode) } }
+    @Published var manualIsNight: Bool? = nil { didSet { save(manualIsNight, .manualIsNight) } }
+    @Published var displayMode: StatusBarDisplayMode = .iconAndTemp { didSet { save(displayMode.rawValue, .displayMode) } }
+    /// Not stored on change: battery-triggered Eco Mode must not outlive the session.
+    /// A manual choice is stored through `saveManualEcoMode()`.
+    @Published var ecoMode: Bool = false {
+        didSet {
+            if !ecoMode { save(brightness, .brightness) }
+        }
+    }
+    @Published var showWeatherAlerts: Bool = true { didSet { save(showWeatherAlerts, .showWeatherAlerts) } }
+    @Published var showAQI: Bool = false { didSet { save(showAQI, .showAQI) } }
 
     // Hover Preview State
     @Published var isPreviewing: Bool = false
@@ -51,5 +63,59 @@ class OverlaySettings: ObservableObject {
             }
         }
 
+    }
+
+    // MARK: - Persistence
+
+    enum Key: String, CaseIterable {
+        case showAurora, showBottomLine, selectedUnit, brightness, manualWeatherCode
+        case manualIsNight, displayMode, ecoMode, showWeatherAlerts, showAQI
+
+        var defaultsKey: String { "WeatherOverlay.settings.\(rawValue)" }
+    }
+
+    private let defaults: UserDefaults?
+
+    /// Pass `nil` for in-memory settings that are never written to disk.
+    init(defaults: UserDefaults? = nil) {
+        self.defaults = defaults
+        guard let defaults else { return }
+
+        if let value = defaults.object(forKey: Key.showAurora.defaultsKey) as? Bool { showAurora = value }
+        if let value = defaults.object(forKey: Key.showBottomLine.defaultsKey) as? Bool { showBottomLine = value }
+        if let raw = defaults.string(forKey: Key.selectedUnit.defaultsKey), let value = WeatherUnit(rawValue: raw) {
+            selectedUnit = value
+        }
+        if let value = defaults.object(forKey: Key.brightness.defaultsKey) as? Double {
+            brightness = min(max(value, 0.25), 1.0)
+        }
+        manualWeatherCode = defaults.object(forKey: Key.manualWeatherCode.defaultsKey) as? Int
+        manualIsNight = defaults.object(forKey: Key.manualIsNight.defaultsKey) as? Bool
+        if let raw = defaults.string(forKey: Key.displayMode.defaultsKey), let value = StatusBarDisplayMode(rawValue: raw) {
+            displayMode = value
+        }
+        if let value = defaults.object(forKey: Key.ecoMode.defaultsKey) as? Bool { ecoMode = value }
+        if let value = defaults.object(forKey: Key.showWeatherAlerts.defaultsKey) as? Bool { showWeatherAlerts = value }
+        if let value = defaults.object(forKey: Key.showAQI.defaultsKey) as? Bool { showAQI = value }
+    }
+
+    /// Stores the current Eco Mode state as the user's own choice.
+    func saveManualEcoMode() {
+        save(ecoMode, .ecoMode)
+    }
+
+    static func removePersistedValues(from defaults: UserDefaults) {
+        for key in Key.allCases {
+            defaults.removeObject(forKey: key.defaultsKey)
+        }
+    }
+
+    private func save(_ value: Any?, _ key: Key) {
+        guard let defaults else { return }
+        if let value {
+            defaults.set(value, forKey: key.defaultsKey)
+        } else {
+            defaults.removeObject(forKey: key.defaultsKey)
+        }
     }
 }

@@ -416,7 +416,9 @@ final class WeatherManagerTests: XCTestCase {
         """.data(using: .utf8)!
         let geoData = freeGeoJSON()
 
-        var requestCount = 0
+        let countLock = NSLock()
+        var forecastRequestCount = 0
+        let firstForecastRequested = expectation(description: "first forecast request in flight")
 
         URLProtocolMock.responseDelay = 0.3
         URLProtocolMock.delayedURLs = ["open-meteo.com"]
@@ -425,13 +427,20 @@ final class WeatherManagerTests: XCTestCase {
             if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
                 return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, geoData)
             }
-            if urlString.contains("open-meteo.com") {
-                requestCount += 1
-                if requestCount == 1 {
+            if urlString.contains("/v1/forecast") {
+                countLock.lock()
+                forecastRequestCount += 1
+                let count = forecastRequestCount
+                countLock.unlock()
+                if count == 1 {
+                    firstForecastRequested.fulfill()
                     return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherJSON1)
                 } else {
                     return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherJSON2)
                 }
+            }
+            if urlString.contains("open-meteo.com") {
+                throw URLError(.badServerResponse)
             }
             fatalError("Unexpected request: \(urlString)")
         }
@@ -440,21 +449,27 @@ final class WeatherManagerTests: XCTestCase {
 
         let secondFetchDone = expectation(description: "second fetch weather call made")
 
+        var appliedTemps: [Double] = []
         manager.$currentTemp
             .dropFirst()
             .sink { temp in
+                appliedTemps.append(temp)
                 if temp == 30.0 {
                     secondFetchDone.fulfill()
                 }
             }
             .store(in: &cancellables)
 
+        // Start the second fetch only once the first forecast request is in flight, so the
+        // first (stale) response is deterministically the one that must be discarded.
         manager.fetchWeather()
+        await fulfillment(of: [firstForecastRequested], timeout: 5.0)
         manager.fetchWeather()
 
         await fulfillment(of: [secondFetchDone], timeout: 5.0)
 
         XCTAssertEqual(manager.currentTemp, 30.0)
+        XCTAssertFalse(appliedTemps.contains(10.0), "The stale first response must never be applied")
         XCTAssertTrue(manager.hasData)
     }
 
