@@ -1,5 +1,11 @@
 import SwiftUI
 
+enum OverlayAnimation {
+    /// Effects are slow-moving, so 30 fps looks the same as the display's native rate
+    /// (up to 120 Hz on ProMotion) at a fraction of the redraws.
+    static let frameInterval: TimeInterval = 1.0 / 30.0
+}
+
 struct OverlayView: View {
     @ObservedObject var weatherManager: WeatherManager
     @ObservedObject var settings: OverlaySettings

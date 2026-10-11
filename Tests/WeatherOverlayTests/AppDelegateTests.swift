@@ -233,6 +233,61 @@ final class AppDelegateTests: XCTestCase {
         return nil
     }
 
+    // MARK: - Overlay Windows on Space Switch
+
+    private func closeOverlayWindows() {
+        appDelegate.overlayWindows.forEach { $0.close() }
+        appDelegate.overlayWindows = []
+    }
+
+    func testSpaceSync_reusesExistingWindows() throws {
+        appDelegate.setupOverlayWindows()
+        defer { closeOverlayWindows() }
+        let before = appDelegate.overlayWindows
+        try XCTSkipIf(before.isEmpty, "No screen with a menu bar in this environment")
+        try XCTSkipUnless(before.allSatisfy(\.isOnActiveSpace), "Windows are not placed on a Space in this environment")
+
+        appDelegate.syncOverlayWindowsToActiveSpace()
+
+        let after = appDelegate.overlayWindows
+        XCTAssertEqual(after.count, before.count)
+        for (old, new) in zip(before, after) {
+            XCTAssertTrue(old === new, "A Space switch must keep the existing window and its running view")
+        }
+    }
+
+    func testSpaceSync_createsWindowsWhenNoneExist() {
+        appDelegate.setupOverlayWindows()
+        let expectedCount = appDelegate.overlayWindows.count
+        closeOverlayWindows()
+        defer { closeOverlayWindows() }
+
+        appDelegate.syncOverlayWindowsToActiveSpace()
+
+        XCTAssertEqual(appDelegate.overlayWindows.count, expectedCount)
+    }
+
+    func testSpaceSync_closesWindowsWithoutAMatchingScreen() {
+        appDelegate.setupOverlayWindows()
+        defer { closeOverlayWindows() }
+        let expectedCount = appDelegate.overlayWindows.count
+
+        let orphan = NSWindow(contentRect: NSRect(x: 12345, y: 12345, width: 10, height: 10), styleMask: [.borderless], backing: .buffered, defer: false)
+        orphan.isReleasedWhenClosed = false
+        orphan.orderFrontRegardless()
+        appDelegate.overlayWindows.append(orphan)
+
+        appDelegate.syncOverlayWindowsToActiveSpace()
+
+        XCTAssertEqual(appDelegate.overlayWindows.count, expectedCount)
+        XCTAssertFalse(appDelegate.overlayWindows.contains { $0 === orphan })
+        XCTAssertFalse(orphan.isVisible)
+    }
+
+    func testOverlayFrameRate_isCappedAt30() {
+        XCTAssertEqual(OverlayAnimation.frameInterval, 1.0 / 30.0, accuracy: 0.0001)
+    }
+
     // MARK: - Settings Persistence
 
     func testManualEcoMode_survivesRelaunchAndRestoresBrightness() {
