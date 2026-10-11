@@ -17,6 +17,8 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     /// True only when Eco Mode was turned on automatically by the battery monitor.
     /// Manual Eco Mode is left alone when power state recovers.
     var autoEnabledEco = false
+    /// Brightness to restore when Eco Mode ends; nil if the user picked a level while Eco was on.
+    var brightnessBeforeEco: Double?
     private var cancellables = Set<AnyCancellable>()
     private var batteryCheckTimer: Timer?
 
@@ -315,8 +317,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             userDisabledEco = false
             // Only auto-disable when Eco was turned on by the battery monitor.
             if autoEnabledEco && settings.ecoMode {
-                settings.ecoMode = false
-                settings.brightness = 1.0
+                exitEcoMode()
                 autoEnabledEco = false
                 menuBarManager.syncMenuStates()
                 menuBarManager.updateStatusItem()
@@ -326,8 +327,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         if onBattery && percent <= 20 && !userDisabledEco {
             if !settings.ecoMode {
                 print("[AppDelegate] Battery \(percent)% — auto-enabling Eco Mode")
-                settings.ecoMode = true
-                settings.brightness = 0.50
+                enterEcoMode()
                 autoEnabledEco = true
                 menuBarManager.syncMenuStates()
                 menuBarManager.updateStatusItem()
@@ -360,13 +360,27 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         return (false, 100)
     }
 
+    private func enterEcoMode() {
+        brightnessBeforeEco = settings.brightness
+        settings.ecoMode = true
+        settings.brightness = 0.50
+    }
+
+    private func exitEcoMode() {
+        settings.ecoMode = false
+        if let previous = brightnessBeforeEco {
+            settings.brightness = previous
+        }
+        brightnessBeforeEco = nil
+    }
+
     @objc func toggleEcoMode() {
-        settings.ecoMode.toggle()
-        if settings.ecoMode {
+        if !settings.ecoMode {
+            enterEcoMode()
             userDisabledEco = false
             autoEnabledEco = false // user-initiated; don't auto-clear on AC/high battery
-            settings.brightness = 0.50
         } else {
+            exitEcoMode()
             userDisabledEco = true
             autoEnabledEco = false
         }
@@ -416,6 +430,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func setBrightness(_ sender: NSMenuItem) {
         if let brightness = sender.representedObject as? Double {
             settings.brightness = brightness
+            brightnessBeforeEco = nil // an explicit choice outlives Eco Mode
             menuBarManager.syncBrightnessSubmenu()
         }
     }
@@ -445,6 +460,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         settings.previewIsNight = nil
         userDisabledEco = false
         autoEnabledEco = false
+        brightnessBeforeEco = nil
 
         menuBarManager.syncMenuStates()
         menuBarManager.updateStatusItem()

@@ -147,6 +147,28 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertFalse(appDelegate.autoEnabledEco)
     }
 
+    func testToggleEcoMode_offRestoresPreviousBrightness() {
+        appDelegate.settings.brightness = 0.75
+
+        appDelegate.toggleEcoMode()
+        XCTAssertEqual(appDelegate.settings.brightness, 0.50)
+
+        appDelegate.toggleEcoMode()
+        XCTAssertEqual(appDelegate.settings.brightness, 0.75, "Leaving Eco Mode must restore the pre-Eco brightness")
+    }
+
+    func testToggleEcoMode_offKeepsBrightnessChosenDuringEco() {
+        appDelegate.settings.brightness = 1.0
+        appDelegate.toggleEcoMode()
+
+        let item = NSMenuItem(title: "75%", action: nil, keyEquivalent: "")
+        item.representedObject = 0.75
+        appDelegate.setBrightness(item)
+
+        appDelegate.toggleEcoMode()
+        XCTAssertEqual(appDelegate.settings.brightness, 0.75, "A level picked during Eco Mode must not be overwritten")
+    }
+
     func testToggleEcoMode_updatesNestedMenuCheckmark() {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         appDelegate.statusItem = statusItem
