@@ -81,7 +81,7 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertEqual(manager.hourlyTemps.count, 12)
         XCTAssertEqual(manager.currentHourIndex, 0, "Hourly window should start at the current hour")
         XCTAssertFalse(manager.hourlyTimes.isEmpty)
-        XCTAssertFalse(manager.isUsingFallbackLocation)
+        XCTAssertFalse(manager.isStale)
         XCTAssertEqual(manager.hourlyTemps.first, 22.5, "Current-hour slice should start with the marked current-hour temp")
         XCTAssertEqual(manager.cityName, "Paris")
         XCTAssertFalse(manager.isNight)
@@ -92,42 +92,139 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertNotNil(manager.forecastUtcOffsetSeconds)
     }
 
-    // MARK: - Geo Failure Falls Back to London
+    // MARK: - Fetch Failure Keeps Last Good Data
 
-    func testFetchWeather_geoFailure_fallsBackToLondon() async throws {
+    /// Serves geo + weather normally, or fails every request while `failing` is set.
+    private final class FailureSwitch: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        var failing: Bool {
+            get { lock.lock(); defer { lock.unlock() }; return value }
+            set { lock.lock(); value = newValue; lock.unlock() }
+        }
+    }
+
+    private func installSwitchableHandler() -> FailureSwitch {
+        let failure = FailureSwitch()
         let weatherData = weatherJSON()
-        let fetchExpectation = expectation(description: "fallback fetch completes")
+        let geoData = freeGeoJSON()
+        URLProtocolMock.requestHandler = { request in
+            let urlString = request.url?.absoluteString ?? ""
+            if failure.failing { throw URLError(.notConnectedToInternet) }
+            if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, geoData)
+            }
+            if urlString.contains("/v1/forecast") {
+                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherData)
+            }
+            throw URLError(.badServerResponse)
+        }
+        return failure
+    }
+
+    private func fetchAndWait() async {
+        let finished = expectation(description: "fetch finished")
+        let subscription = manager.$isFetching
+            .dropFirst()
+            .filter { !$0 }
+            .first()
+            .sink { _ in finished.fulfill() }
+        manager.fetchWeather()
+        await fulfillment(of: [finished], timeout: 3.0)
+        subscription.cancel()
+    }
+
+    func testFetchFailure_withoutPriorData_reportsErrorAndNeverSubstitutesAnotherCity() async throws {
+        let forecastRequested = expectation(description: "no forecast may be requested for a substitute city")
+        forecastRequested.isInverted = true
 
         URLProtocolMock.requestHandler = { request in
             let urlString = request.url?.absoluteString ?? ""
-            if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
-                throw URLError(.cannotFindHost)
-            }
-            if urlString.contains("open-meteo.com") {
-                return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, weatherData)
-            }
-            fatalError("Unexpected request: \(urlString)")
+            if urlString.contains("open-meteo.com") { forecastRequested.fulfill() }
+            throw URLError(.cannotFindHost)
         }
 
         manager = WeatherManager(session: .mock)
-        manager.$cityName
-            .dropFirst()
-            .sink { city in
-                if city == "London (Fallback)" {
-                    fetchExpectation.fulfill()
-                }
-            }
-            .store(in: &cancellables)
+        await fetchAndWait()
+        await fulfillment(of: [forecastRequested], timeout: 0.3)
 
-        manager.fetchWeather()
+        XCTAssertFalse(manager.hasData)
+        XCTAssertFalse(manager.isStale)
+        XCTAssertTrue(manager.errorMessage?.contains("Fetch Failed") ?? false)
+        XCTAssertNotEqual(manager.cityName, "London (Fallback)")
+    }
 
-        await fulfillment(of: [fetchExpectation], timeout: 3.0)
+    func testFetchFailure_afterSuccess_keepsLastGoodDataAsStale() async throws {
+        let failure = installSwitchableHandler()
+        manager = WeatherManager(session: .mock)
 
-        XCTAssertEqual(manager.cityName, "London (Fallback)")
-        XCTAssertTrue(manager.isUsingFallbackLocation)
+        await fetchAndWait()
+        XCTAssertTrue(manager.hasData)
+        XCTAssertFalse(manager.isStale)
+        let goodCity = manager.cityName
+        let goodUpdate = manager.lastUpdated
+
+        failure.failing = true
+        await fetchAndWait()
+
+        XCTAssertTrue(manager.hasData, "Last good data must stay on screen")
+        XCTAssertTrue(manager.isStale)
+        XCTAssertNil(manager.errorMessage)
         XCTAssertEqual(manager.currentTemp, 22.5)
+        XCTAssertEqual(manager.cityName, goodCity)
+        XCTAssertEqual(manager.lastUpdated, goodUpdate, "A failed refresh must not move the last-updated time")
+        XCTAssertFalse(manager.isFetching)
+    }
+
+    func testFetchFailure_recoveryClearsStale() async throws {
+        let failure = installSwitchableHandler()
+        manager = WeatherManager(session: .mock)
+
+        await fetchAndWait()
+        failure.failing = true
+        await fetchAndWait()
+        XCTAssertTrue(manager.isStale)
+
+        failure.failing = false
+        await fetchAndWait()
+        XCTAssertFalse(manager.isStale)
         XCTAssertTrue(manager.hasData)
         XCTAssertNil(manager.errorMessage)
+    }
+
+    func testFetchFailure_dataOlderThanLimitIsDropped() async throws {
+        let failure = installSwitchableHandler()
+        manager = WeatherManager(session: .mock)
+
+        await fetchAndWait()
+        manager.lastUpdated = Date().addingTimeInterval(-WeatherManager.maxStaleAge - 60)
+
+        failure.failing = true
+        await fetchAndWait()
+
+        XCTAssertFalse(manager.hasData)
+        XCTAssertFalse(manager.isStale)
+        XCTAssertTrue(manager.hourlyTemps.isEmpty)
+        XCTAssertNotNil(manager.errorMessage)
+    }
+
+    func testFetchFailure_afterSwitchingLocation_doesNotShowPreviousCity() async throws {
+        let failure = installSwitchableHandler()
+        manager = WeatherManager(session: .mock)
+
+        await fetchAndWait()
+        XCTAssertTrue(manager.hasData)
+
+        failure.failing = true
+        let finished = expectation(description: "fetch for new location finished")
+        let subscription = manager.$isFetching.dropFirst().filter { !$0 }.first().sink { _ in finished.fulfill() }
+        manager.addSavedLocation(SavedLocation(id: UUID(), name: "Mumbai", latitude: 19.07, longitude: 72.87))
+        await fulfillment(of: [finished], timeout: 3.0)
+        subscription.cancel()
+
+        XCTAssertFalse(manager.hasData, "Another location's data must not stand in for the selected one")
+        XCTAssertFalse(manager.isStale)
+        XCTAssertNotNil(manager.errorMessage)
     }
 
     // MARK: - Full Network Error

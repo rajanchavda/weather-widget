@@ -17,6 +17,13 @@ class MenuBarManager {
         case unit = 1007
     }
 
+    static let staleTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
     init(appDelegate: AppDelegate, weatherManager: WeatherManager, settings: OverlaySettings) {
         self.appDelegate = appDelegate
         self.weatherManager = weatherManager
@@ -273,7 +280,11 @@ class MenuBarManager {
                 displayedTemp = temp
             }
             title = buildStatusTitle(emoji: emoji, displayedTemp: displayedTemp)
-            locationTitle = "Location: \(city)"
+            if weatherManager.isStale, let updated = weatherManager.lastUpdated {
+                locationTitle = "Location: \(city) (last updated \(Self.staleTimeFormatter.string(from: updated)))"
+            } else {
+                locationTitle = "Location: \(city)"
+            }
         }
 
         let aqiSuffix: String

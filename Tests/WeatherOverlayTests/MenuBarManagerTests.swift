@@ -216,6 +216,27 @@ final class MenuBarManagerTests: XCTestCase {
 
     // MARK: - Location Title
 
+    func testLocationTitle_staleDataShowsLastUpdatedTime() {
+        let updated = Date(timeIntervalSince1970: 1_768_040_400)
+        weatherManager.isStale = true
+        weatherManager.lastUpdated = updated
+
+        menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
+
+        let expectedTime = MenuBarManager.staleTimeFormatter.string(from: updated)
+        XCTAssertEqual(appDelegate.statusItem?.menu?.items[0].title, "Location: Tokyo (last updated \(expectedTime))")
+        XCTAssertEqual(appDelegate.statusItem?.button?.title, "☀️ 20.0°C", "Stale data still shows the last known weather")
+    }
+
+    func testLocationTitle_freshDataHasNoStaleNote() {
+        weatherManager.isStale = false
+        weatherManager.lastUpdated = Date()
+
+        menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
+
+        XCTAssertEqual(appDelegate.statusItem?.menu?.items[0].title, "Location: Tokyo")
+    }
+
     func testLocationTitleUpdate() {
         menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
 
