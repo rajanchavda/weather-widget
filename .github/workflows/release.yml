@@ -17,6 +17,9 @@ jobs:
       - name: Extract version from tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
 
+      - name: Run tests
+        run: swift test
+
       - name: Build and package app
         run: bash build_app.sh "$VERSION"
 
@@ -24,18 +27,10 @@ jobs:
         id: sha
         run: echo "value=$(shasum -a 256 WeatherOverlay.zip | cut -d' ' -f1)" >> $GITHUB_OUTPUT
 
-      - name: Prepare release notes
-        run: |
-          cat > release_notes.md <<EOF
-          ## WeatherOverlay v${VERSION}
-
-          [Add release notes here]
-          EOF
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: release_notes.md
+          generate_release_notes: true
           files: WeatherOverlay.zip
 
       - name: Update Homebrew cask
