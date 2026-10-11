@@ -5,6 +5,25 @@ on:
     tags:
       - 'v*'
 
+# Developer ID signing and notarization are optional. They switch on when the repository
+# secrets below exist. With none of them set, the app is ad-hoc signed and the cask strips
+# the quarantine attribute after install, as before.
+#
+# Signing (all three, or none):
+#   DEVELOPER_ID_CERTIFICATE_P12_BASE64  "Developer ID Application" certificate and its private
+#                                        key, exported as a .p12 file and base64-encoded
+#   DEVELOPER_ID_CERTIFICATE_PASSWORD    Password set when exporting that .p12
+#   CODESIGN_IDENTITY                    Name of the certificate, in the form
+#                                        "Developer ID Application: Name (TEAMID)"
+#
+# Notarization (needs signing; once on, the cask no longer strips the quarantine attribute):
+#   NOTARY_KEY_P8_BASE64                 App Store Connect API key (AuthKey_<id>.p8), base64-encoded
+#   NOTARY_KEY_ID                        Key ID of that API key
+#   NOTARY_ISSUER_ID                     Issuer ID of that API key (omit for an individual key)
+#
+# Already in use:
+#   HOMEBREW_TAP_TOKEN                   Token allowed to push to rajanchavda/homebrew-tap
+
 jobs:
   build:
     name: Build and Release
@@ -20,8 +39,93 @@ jobs:
       - name: Run tests
         run: swift test
 
+      # `secrets` cannot be used in a step's `if:`, so this step turns their presence into outputs.
+      - name: Detect signing configuration
+        id: signing
+        env:
+          DEVELOPER_ID_CERTIFICATE_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_P12_BASE64 }}
+          DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          sign=false
+          notarize=false
+
+          if [ -n "${DEVELOPER_ID_CERTIFICATE_P12_BASE64}${DEVELOPER_ID_CERTIFICATE_PASSWORD}${CODESIGN_IDENTITY}" ]; then
+            if [ -z "$DEVELOPER_ID_CERTIFICATE_P12_BASE64" ] || [ -z "$DEVELOPER_ID_CERTIFICATE_PASSWORD" ] || [ -z "$CODESIGN_IDENTITY" ]; then
+              echo "::error::Signing is partly configured. Set all of DEVELOPER_ID_CERTIFICATE_P12_BASE64, DEVELOPER_ID_CERTIFICATE_PASSWORD and CODESIGN_IDENTITY, or none of them."
+              exit 1
+            fi
+            sign=true
+          fi
+
+          if [ -n "${NOTARY_KEY_P8_BASE64}${NOTARY_KEY_ID}${NOTARY_ISSUER_ID}" ]; then
+            if [ -z "$NOTARY_KEY_P8_BASE64" ] || [ -z "$NOTARY_KEY_ID" ]; then
+              echo "::error::Notarization is partly configured. Set both NOTARY_KEY_P8_BASE64 and NOTARY_KEY_ID (plus NOTARY_ISSUER_ID for a team key), or none of them."
+              exit 1
+            fi
+            if [ "$sign" != true ]; then
+              echo "::error::Notarization secrets are set without the signing secrets. Apple only notarizes Developer ID signed code."
+              exit 1
+            fi
+            notarize=true
+          fi
+
+          echo "sign=${sign}" >> "$GITHUB_OUTPUT"
+          echo "notarize=${notarize}" >> "$GITHUB_OUTPUT"
+          echo "Developer ID signing: ${sign}. Notarization: ${notarize}."
+
+      - name: Import Developer ID certificate
+        if: steps.signing.outputs.sign == 'true'
+        env:
+          DEVELOPER_ID_CERTIFICATE_P12_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_P12_BASE64 }}
+          DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer_id.p12"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+
+          (umask 077; printf '%s' "$DEVELOPER_ID_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERTIFICATE_PATH")
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$DEVELOPER_ID_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          rm -f "$CERTIFICATE_PATH"
+
+          # Lets codesign use the key without a password prompt, which would hang the job.
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+          # codesign looks an identity up through the search list, so the keychain joins it.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Write notary API key
+        if: steps.signing.outputs.notarize == 'true'
+        env:
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+        run: |
+          NOTARY_KEY_PATH="$RUNNER_TEMP/notary_key.p8"
+          (umask 077; printf '%s' "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$NOTARY_KEY_PATH")
+          echo "NOTARY_KEY_PATH=${NOTARY_KEY_PATH}" >> "$GITHUB_ENV"
+
+      # Without the secrets these variables are empty and build_app.sh signs ad-hoc.
+      # It reports the outcome as the step output `notarized`.
       - name: Build and package app
+        id: build
+        env:
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: bash build_app.sh "$VERSION"
+
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2> /dev/null || true
+          rm -f "$RUNNER_TEMP/developer_id.p12" "$RUNNER_TEMP/notary_key.p8"
 
       - name: Compute SHA-256
         id: sha
@@ -37,13 +141,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           SHA256: ${{ steps.sha.outputs.value }}
+          NOTARIZED: ${{ steps.build.outputs.notarized }}
         run: |
           git clone "https://x-access-token:${GH_TOKEN}@github.com/rajanchavda/homebrew-tap.git" /tmp/homebrew-tap
 
           ruby -e "
             version = ENV['VERSION']
             sha256  = ENV['SHA256']
-            File.write('/tmp/homebrew-tap/Casks/weatheroverlay.rb', <<~CASK)
+            cask = <<~CASK
               cask \"weatheroverlay\" do
                 version \"#{version}\"
                 sha256 \"#{sha256}\"
@@ -68,6 +173,14 @@ jobs:
                 zap trash: \"~/Library/Preferences/com.weatheroverlay.WeatherOverlay.plist\"
               end
             CASK
+
+            # Gatekeeper accepts a notarized app as it is. Any other build is blocked while it
+            # carries the quarantine attribute, so only those keep the postflight that strips it.
+            if ENV['NOTARIZED'] == 'true'
+              cask.sub!(/^  postflight do\n.*?^  end\n\n/m, '') or abort('postflight stanza not found in the cask template')
+            end
+
+            File.write('/tmp/homebrew-tap/Casks/weatheroverlay.rb', cask)
           "
 
           cd /tmp/homebrew-tap
