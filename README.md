@@ -154,7 +154,7 @@ The app offers two location modes — **Auto (IP-based)** and **Manual (city ove
 - **Auto-refresh**: every **5 minutes** (300 seconds)
 - **Force refresh**: ⌘R from the menu
 - **System events**: refresh fires automatically on screen unlock and system wake
-- **Network timeout**: 5 seconds per request (failures fall through gracefully — see error handling below)
+- **Network timeout**: 15 seconds per request. If a refresh fails, the last good weather stays on screen and the menu shows when it was last updated; after 3 hours without a successful refresh an error is shown instead
 
 ### Why no GPS / device location?
 The app intentionally uses IP-based geolocation rather than CoreLocation/GPS so it can be distributed without code-signing complications, permission prompts, or first-launch friction. For users who want precision, the manual city override gives pin-point accuracy with zero permission UX.
@@ -212,7 +212,7 @@ This gives you a quick visual glance at whether temperatures are rising, falling
 ### Refresh Interval
 - **Auto-refresh**: Every **5 minutes** (300 seconds)
 - **Manual refresh**: Available via menu (⌘R)
-- **Network timeout**: 5 seconds per API request
+- **Network timeout**: 15 seconds per API request
 
 ### Battery Consumption
 **Estimated Impact**: ~0.5-2% per hour (very low, varies by weather)
@@ -382,8 +382,8 @@ Working list from the October 2026 repo review. Items are ordered by priority wi
 - [x] **Fix alert spam** — notify on event onset instead of once per forecast hour
   - [x] Suppress alerts while showing fallback data
   - [x] Respect the selected temperature unit and include the city name
-- [ ] **Replace the London fallback** — keep the last good data and mark it stale on fetch failure
-  - [ ] Loosen the 5-second request timeout
+- [x] **Replace the London fallback** — keep the last good data and mark it stale on fetch failure
+  - [x] Loosen the 5-second request timeout
 - [ ] **Cap animation frame rate** — `TimelineView(.animation(minimumInterval: 1/30))` for all effects
   - [ ] Stop rebuilding overlay windows on every Space switch
 - [ ] **Debounce the change sink** — one status/menu/alert pass per fetch instead of one per `@Published` change

@@ -33,7 +33,7 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 - Requests `.alert` + `.sound` authorization on launch
 - Evaluates hourly forecast for: thunderstorms, rain (with precipitation gate), freezing rain, snow, fog, freezing temperatures
 - Notifies on event onset only: one alert when an event first enters the 2-hour look-ahead, none while it is ongoing, re-armed once it has passed (3-hour cooldown damps flickering forecasts)
-- No alerts while showing the London fallback; alert state resets when the city changes
+- No alerts while the data is stale; alert state resets when the city changes
 - Notification subtitle carries the city; freezing alerts use the selected temperature unit
 - Formats time strings to `h:mm a` display, includes "X minutes away" logic
 
@@ -56,10 +56,11 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 - `hourlyTimes`: Next 12 hours ISO timestamps
 - `hourlyPrecipitation`: Next 12 hours precipitation (mm)
 - `currentPrecipitation`: Computed current hour precipitation
-- `cityName`: Detected or fallback city name
+- `cityName`: Detected or manually chosen city name
 - `isNight`: Night detection from API `is_day` field or local fallback
 - `hasData`, `isFetching`, `errorMessage`: State flags
 - `isPaused`: Paused state (display sleep, etc.)
+- `isStale`: Last refresh failed and the previous good data is still shown
 - `aqiValue`: European AQI value (optional)
 - `aqiLabel`: Human-readable AQI category label
 - `savedLocations`: Array of `SavedLocation` for multi-city support
@@ -67,7 +68,8 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 
 **Error Handling:**
 - Primary fetch with user's location
-- Fallback to London (51.5074, -0.1278) on location failure
+- On a failed refresh, the last good data stays on screen marked stale (`isStale`), for up to 3 hours and only for the same location
+- With no usable data, an error is shown; another city is never substituted
 - Stale response discard via generation counter
 - Non-fatal AQI errors (weather data still valid)
 - Graceful error messages displayed in status bar
@@ -193,7 +195,7 @@ func getMenuBarFrame(for screen: NSScreen) -> NSRect {
 - No external package dependencies
 
 ### Performance Considerations
-- **Network**: 5-second timeout for all HTTP requests
+- **Network**: 15-second request timeout (30 seconds per resource)
 - **Update Frequency**: 5-minute auto-refresh cycle
 - **Memory**: ~57 MB (with animations running), ~30-35 MB (idle)
 - **CPU Usage**: 

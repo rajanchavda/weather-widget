@@ -181,10 +181,9 @@ final class NotificationManagerTests: XCTestCase {
 
     // MARK: - Suppression
 
-    func testFallbackLocation_suppressesAlerts() {
+    func testStaleData_suppressesAlerts() {
         let manager = makeManager()
-        weatherManager.isUsingFallbackLocation = true
-        weatherManager.cityName = "London (Fallback)"
+        weatherManager.isStale = true
         setForecast(codes: [0, 95, 95], temps: [0, -5, -5])
         XCTAssertTrue(manager.collectAlerts().isEmpty)
     }

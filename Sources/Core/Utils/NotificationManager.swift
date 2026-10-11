@@ -58,8 +58,8 @@ class NotificationManager {
     /// under way, or was already announced and has not yet passed, produces nothing.
     func collectAlerts() -> [WeatherAlert] {
         guard settings.showWeatherAlerts, weatherManager.hasData else { return [] }
-        // Fallback data describes another city, not the user's.
-        guard !weatherManager.isUsingFallbackLocation else { return [] }
+        // A stale forecast no longer lines up with the current hour.
+        guard !weatherManager.isStale else { return [] }
         // Hourly window is aligned to the current hour at index 0; alerts look ahead from the next hour.
         guard weatherManager.hourlyCodes.count >= 2 else { return [] }
 

@@ -17,6 +17,8 @@ class WeatherManager: ObservableObject {
     @Published var hasData: Bool = false
     @Published var errorMessage: String? = nil
     @Published var isPaused: Bool = false
+    /// True while the last refresh failed and the previous good data is still being shown.
+    @Published var isStale: Bool = false
     @Published var aqiValue: Double? = nil
     @Published var aqiLabel: String = ""
 
@@ -24,12 +26,14 @@ class WeatherManager: ObservableObject {
     var currentHourIndex: Int = -1
     /// UTC offset for the active forecast location (from Open-Meteo `timezone=auto`).
     var forecastUtcOffsetSeconds: Int? = nil
-    /// True while the displayed weather is the London fallback rather than the user's location.
-    var isUsingFallbackLocation = false
     @Published var activeLocationId: UUID? = nil
 
     private let activeIdKey = "WeatherOverlay.activeLocationId"
     private let hourlyWindowSize = 12
+    /// How long the last good data is kept through failed refreshes before it is dropped.
+    static let maxStaleAge: TimeInterval = 3 * 3600
+    /// Identifies the location the current data was fetched for.
+    private var dataSourceKey: String?
 
     private var timer: AnyCancellable?
     private var fetchGeneration: Int = 0
@@ -52,8 +56,8 @@ class WeatherManager: ObservableObject {
     init(session: URLSession? = nil) {
         self.session = session ?? {
             let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 5.0
-            config.timeoutIntervalForResource = 5.0
+            config.timeoutIntervalForRequest = 15.0
+            config.timeoutIntervalForResource = 30.0
             return URLSession(configuration: config)
         }()
         loadSavedLocations()
@@ -245,11 +249,13 @@ class WeatherManager: ObservableObject {
         print("[WeatherManager] Spawning background fetch task (gen=\(generation))...")
         Task {
             print("[WeatherManager] Background fetch task started.")
+            let manual = self.manualLocation
+            let sourceKey = manual.map { "manual:\($0.latitude),\($0.longitude)" } ?? "auto"
             do {
                 let lat: Double
                 let lon: Double
                 let city: String
-                if let manual = self.manualLocation {
+                if let manual {
                     print("[WeatherManager] Using manual location: \(manual.name) (\(manual.latitude), \(manual.longitude))")
                     lat = manual.latitude
                     lon = manual.longitude
@@ -271,7 +277,8 @@ class WeatherManager: ObservableObject {
                     print("[WeatherManager] Discarding stale success result (gen=\(generation), current=\(self.fetchGeneration))")
                     return
                 }
-                self.applyWeatherResponse(weather, cityName: city, useLocalNightFallback: false)
+                self.applyWeatherResponse(weather, cityName: city)
+                self.dataSourceKey = sourceKey
                 self.isFetching = false
                 print("[WeatherManager] fetchWeather() completed successfully.")
 
@@ -300,58 +307,38 @@ class WeatherManager: ObservableObject {
                     self.aqiLabel = ""
                 }
             } catch {
-                print("[WeatherManager] Primary fetch error: \(error.localizedDescription)")
-                let primaryErrStr = error.localizedDescription
-
-                do {
-                    print("[WeatherManager] Initiating fallback fetch (London: 51.5074, -0.1278)...")
-                    let weather = try await fetchWeatherData(lat: 51.5074, lon: -0.1278)
-
-                    guard generation == self.fetchGeneration else {
-                        print("[WeatherManager] Discarding stale fallback result (gen=\(generation), current=\(self.fetchGeneration))")
-                        return
-                    }
-                    self.applyWeatherResponse(weather, cityName: "London (Fallback)", useLocalNightFallback: true)
-                    self.errorMessage = nil
-                    self.isFetching = false
-                    print("[WeatherManager] Fallback completed.")
-
-                    do {
-                        print("[WeatherManager] Fetching air quality data (fallback)...")
-                        let aqi = try await fetchAirQuality(lat: 51.5074, lon: -0.1278)
-                        guard generation == self.fetchGeneration else {
-                            print("[WeatherManager] Discarding stale AQI result (gen=\(generation), current=\(self.fetchGeneration))")
-                            return
-                        }
-                        if let value = aqi.current.europeanAqi {
-                            self.aqiValue = value
-                            self.aqiLabel = AQICategory.from(europeanAqi: value).label
-                        } else {
-                            self.aqiValue = nil
-                            self.aqiLabel = ""
-                        }
-                        print("[WeatherManager] Air quality fetched (fallback): AQI=\(self.aqiValue ?? -1) \(self.aqiLabel)")
-                    } catch {
-                        print("[WeatherManager] AQI fetch failed (fallback, non-fatal): \(error.localizedDescription)")
-                        guard generation == self.fetchGeneration else {
-                            print("[WeatherManager] Discarding stale AQI error (gen=\(generation), current=\(self.fetchGeneration))")
-                            return
-                        }
-                        self.aqiValue = nil
-                        self.aqiLabel = ""
-                    }
-                } catch {
-                    print("[WeatherManager] Fallback weather fetch also failed: \(error.localizedDescription)")
-                    guard generation == self.fetchGeneration else {
-                        print("[WeatherManager] Discarding stale error (gen=\(generation), current=\(self.fetchGeneration))")
-                        return
-                    }
-                    self.isNight = computeIsNightLocally()
-                    self.errorMessage = "Fetch Failed: \(primaryErrStr) (Fallback failed: \(error.localizedDescription))"
-                    self.isFetching = false
+                print("[WeatherManager] Fetch error: \(error.localizedDescription)")
+                guard generation == self.fetchGeneration else {
+                    print("[WeatherManager] Discarding stale error (gen=\(generation), current=\(self.fetchGeneration))")
+                    return
                 }
+                self.handleFetchFailure(error, sourceKey: sourceKey)
             }
         }
+    }
+
+    /// Keeps the last good data on screen, marked stale, when it is recent and for the
+    /// same location. Otherwise there is nothing truthful to show, so report the error.
+    private func handleFetchFailure(_ error: Error, sourceKey: String) {
+        let isRecent = lastUpdated.map { Date().timeIntervalSince($0) < Self.maxStaleAge } ?? false
+        if hasData && dataSourceKey == sourceKey && isRecent {
+            print("[WeatherManager] Keeping last good data as stale.")
+            isStale = true
+        } else {
+            hasData = false
+            isStale = false
+            dataSourceKey = nil
+            hourlyTemps = []
+            hourlyCodes = []
+            hourlyTimes = []
+            hourlyPrecipitation = []
+            currentHourIndex = -1
+            aqiValue = nil
+            aqiLabel = ""
+            isNight = computeIsNightLocally()
+            errorMessage = "Fetch Failed: \(error.localizedDescription)"
+        }
+        isFetching = false
     }
 
     private func fetchLocation() async throws -> GeoResponse {
@@ -409,7 +396,7 @@ class WeatherManager: ObservableObject {
         return ManualLocation(name: displayName, latitude: first.latitude, longitude: first.longitude)
     }
 
-    private func applyWeatherResponse(_ weather: WeatherResponse, cityName: String, useLocalNightFallback: Bool) {
+    private func applyWeatherResponse(_ weather: WeatherResponse, cityName: String) {
         let offset = weather.utc_offset_seconds
         self.forecastUtcOffsetSeconds = offset
         let window = sliceHourlyWindow(from: weather, utcOffsetSeconds: offset)
@@ -423,13 +410,9 @@ class WeatherManager: ObservableObject {
         // Window is already aligned to "now", so current hour is index 0 when data exists.
         self.currentHourIndex = window.times.isEmpty ? -1 : 0
         self.cityName = cityName
-        self.isUsingFallbackLocation = useLocalNightFallback
-        if useLocalNightFallback {
-            self.isNight = computeIsNightLocally(utcOffsetSeconds: offset)
-        } else {
-            self.isNight = weather.current.is_day == 0
-        }
+        self.isNight = weather.current.is_day == 0
         self.lastUpdated = Date()
+        self.isStale = false
         self.hasData = true
     }
 
