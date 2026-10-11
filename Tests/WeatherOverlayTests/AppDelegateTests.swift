@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 import Cocoa
 @testable import WeatherOverlayCore
 
@@ -231,6 +232,67 @@ final class AppDelegateTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    // MARK: - Change Observation
+
+    private func waitForDebounce() {
+        let settled = expectation(description: "debounce window elapsed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { settled.fulfill() }
+        wait(for: [settled], timeout: 2.0)
+    }
+
+    func testObserveChanges_coalescesABurstIntoOneRefresh() {
+        var refreshCount = 0
+        let subscription = appDelegate.observeChanges { refreshCount += 1 }
+        defer { subscription.cancel() }
+
+        // Mirrors what one weather fetch publishes.
+        let weather = appDelegate.weatherManager
+        weather.currentTemp = 12.0
+        weather.weatherCode = 61
+        weather.hourlyTemps = [12, 11, 10]
+        weather.hourlyCodes = [61, 61, 3]
+        weather.hourlyTimes = ["a", "b", "c"]
+        weather.hourlyPrecipitation = [1, 2, 0]
+        weather.cityName = "Oslo"
+        weather.isNight = true
+        weather.lastUpdated = Date()
+        weather.isStale = false
+        weather.hasData = true
+        weather.isFetching = false
+        XCTAssertEqual(refreshCount, 0, "Nothing refreshes until the burst settles")
+
+        waitForDebounce()
+        XCTAssertEqual(refreshCount, 1)
+    }
+
+    func testObserveChanges_separateChangesEachRefresh() {
+        var refreshCount = 0
+        let subscription = appDelegate.observeChanges { refreshCount += 1 }
+        defer { subscription.cancel() }
+
+        appDelegate.weatherManager.currentTemp = 5.0
+        waitForDebounce()
+        appDelegate.settings.showAQI.toggle()
+        waitForDebounce()
+
+        XCTAssertEqual(refreshCount, 2, "Weather and settings changes both trigger a refresh")
+    }
+
+    func testObserveChanges_refreshSeesFinalValues() {
+        var seenTemp: Double?
+        let subscription = appDelegate.observeChanges { [unowned self] in
+            seenTemp = self.appDelegate.weatherManager.currentTemp
+        }
+        defer { subscription.cancel() }
+
+        appDelegate.weatherManager.currentTemp = 1.0
+        appDelegate.weatherManager.currentTemp = 2.0
+        appDelegate.weatherManager.currentTemp = 3.0
+
+        waitForDebounce()
+        XCTAssertEqual(seenTemp, 3.0)
     }
 
     // MARK: - Overlay Windows on Space Switch

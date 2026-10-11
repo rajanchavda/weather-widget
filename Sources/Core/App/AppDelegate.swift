@@ -122,12 +122,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         notificationManager.requestAuthorization()
 
         print("[AppDelegate] Subscribing to WeatherManager / settings change events...")
-        Publishers.Merge(
-            weatherManager.objectWillChange.map { _ in () },
-            settings.objectWillChange.map { _ in () }
-        )
-        .receive(on: RunLoop.main)
-        .sink { [weak self] in
+        observeChanges { [weak self] in
             guard let self = self else { return }
             self.menuBarManager.updateStatusItem()
             self.menuBarManager.syncLocationsSubmenu()
@@ -141,6 +136,19 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         setupPowerMonitoring()
 
         performUpdateCheck(isUserInitiated: false)
+    }
+
+    /// A single fetch changes a dozen published properties in a row; wait for the burst
+    /// to settle so the status item, menu and alerts are refreshed once, not once each.
+    static let changeDebounce: RunLoop.SchedulerTimeType.Stride = .milliseconds(50)
+
+    func observeChanges(_ handler: @escaping () -> Void) -> AnyCancellable {
+        Publishers.Merge(
+            weatherManager.objectWillChange.map { _ in () },
+            settings.objectWillChange.map { _ in () }
+        )
+        .debounce(for: Self.changeDebounce, scheduler: RunLoop.main)
+        .sink(receiveValue: handler)
     }
 
     func setupOverlayWindows() {

@@ -386,7 +386,7 @@ Working list from the October 2026 repo review. Items are ordered by priority wi
   - [x] Loosen the 5-second request timeout
 - [x] **Cap animation frame rate** — `TimelineView(.animation(minimumInterval: 1/30))` for all effects
   - [x] Stop rebuilding overlay windows on every Space switch
-- [ ] **Debounce the change sink** — one status/menu/alert pass per fetch instead of one per `@Published` change
+- [x] **Debounce the change sink** — one status/menu/alert pass per fetch instead of one per `@Published` change
 - [ ] **Remove dead code** — `promptSetLocation`, `clearManualLocation`, `RainDrop`, `menu.items[1]` index hacks
   - [ ] Collapse `ManualLocation` and `SavedLocation` into one source of truth
   - [ ] Remove the stray `zap` path and placeholder username from the cask template in `build_app.sh`
