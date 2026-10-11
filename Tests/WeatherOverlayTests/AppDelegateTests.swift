@@ -8,11 +8,13 @@ final class AppDelegateTests: XCTestCase {
     
     override func setUp() {
         super.setUp()
+        OverlaySettings.removePersistedValues(from: .standard)
         appDelegate = AppDelegate()
     }
     
     override func tearDown() {
         appDelegate = nil
+        OverlaySettings.removePersistedValues(from: .standard)
         super.tearDown()
     }
     
@@ -229,6 +231,47 @@ final class AppDelegateTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    // MARK: - Settings Persistence
+
+    func testManualEcoMode_survivesRelaunchAndRestoresBrightness() {
+        appDelegate.settings.brightness = 0.75
+        appDelegate.toggleEcoMode()
+
+        let relaunched = AppDelegate()
+        XCTAssertTrue(relaunched.settings.ecoMode)
+        XCTAssertEqual(relaunched.settings.brightness, 0.50, "Eco Mode dims again after relaunch")
+
+        relaunched.toggleEcoMode()
+        XCTAssertEqual(relaunched.settings.brightness, 0.75, "Pre-Eco brightness must survive a relaunch")
+        XCTAssertFalse(AppDelegate().settings.ecoMode)
+    }
+
+    func testAutoEcoMode_isNotPersisted() {
+        appDelegate.settings.brightness = 0.75
+        // Mirrors the battery monitor, which sets these without a manual toggle.
+        appDelegate.settings.ecoMode = true
+        appDelegate.settings.brightness = 0.50
+        appDelegate.autoEnabledEco = true
+
+        let relaunched = AppDelegate()
+        XCTAssertFalse(relaunched.settings.ecoMode)
+        XCTAssertEqual(relaunched.settings.brightness, 0.75)
+    }
+
+    func testResetToDefaults_clearsPersistedSettings() {
+        appDelegate.settings.selectedUnit = .fahrenheit
+        appDelegate.settings.showAQI = true
+        appDelegate.toggleEcoMode()
+
+        appDelegate.resetToDefaults()
+
+        let relaunched = AppDelegate()
+        XCTAssertEqual(relaunched.settings.selectedUnit, .celsius)
+        XCTAssertFalse(relaunched.settings.showAQI)
+        XCTAssertFalse(relaunched.settings.ecoMode)
+        XCTAssertEqual(relaunched.settings.brightness, 1.0)
     }
 
     func testResetToDefaults_clearsEcoFlags() {

@@ -11,7 +11,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     var overlayWindows: [NSWindow] = []
     var statusItem: NSStatusItem?
     let weatherManager = WeatherManager()
-    let settings = OverlaySettings()
+    let settings = OverlaySettings(defaults: .standard)
     var isUpdateReady = false
     var userDisabledEco = false
     /// True only when Eco Mode was turned on automatically by the battery monitor.
@@ -30,6 +30,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         self.notificationManager = NotificationManager(weatherManager: weatherManager, settings: settings)
         super.init()
         AppDelegate.shared = self
+        // A stored manual Eco Mode comes back with the user's full brightness; dim it again.
+        if settings.ecoMode {
+            brightnessBeforeEco = settings.brightness
+            settings.brightness = min(settings.brightness, 0.50)
+        }
         self.menuBarManager = MenuBarManager(appDelegate: self, weatherManager: weatherManager, settings: settings)
         self.updateManager = UpdateManager(appDelegate: self)
     }
@@ -385,6 +390,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             userDisabledEco = true
             autoEnabledEco = false
         }
+        settings.saveManualEcoMode()
         menuBarManager.syncMenuStates()
         menuBarManager.updateStatusItem()
     }
@@ -462,6 +468,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         userDisabledEco = false
         autoEnabledEco = false
         brightnessBeforeEco = nil
+        settings.saveManualEcoMode()
 
         menuBarManager.syncMenuStates()
         menuBarManager.updateStatusItem()

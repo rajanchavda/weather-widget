@@ -373,7 +373,7 @@ Working list from the October 2026 repo review. Items are ordered by priority wi
 
 ### Fixes
 
-- [ ] **Persist settings** — back `OverlaySettings` with `UserDefaults` so unit, brightness, display mode, AQI and alert toggles survive relaunch
+- [x] **Persist settings** — back `OverlaySettings` with `UserDefaults` so unit, brightness, display mode, AQI and alert toggles survive relaunch
 - [ ] **Make auto-update opt-in** — background check only notifies; `brew upgrade` runs on click
   - [ ] Skip the update check when running outside an `.app` bundle (`swift run`)
   - [ ] Drain the brew output pipe while the process runs so verbose output can't hang it
