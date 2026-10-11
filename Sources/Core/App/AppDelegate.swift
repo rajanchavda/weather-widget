@@ -143,7 +143,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         performUpdateCheck(isUserInitiated: false)
     }
 
-    private func setupOverlayWindows() {
+    func setupOverlayWindows() {
         for window in overlayWindows {
             window.close()
         }
@@ -152,33 +152,65 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         for screen in NSScreen.screens {
             let frame = getMenuBarFrame(for: screen)
             guard frame.height > 1 else { continue }
-
-            let window = NSWindow(
-                contentRect: frame,
-                styleMask: [.borderless],
-                backing: .buffered,
-                defer: false
-            )
-
-            window.isReleasedWhenClosed = false
-            window.backgroundColor = .clear
-            window.isOpaque = false
-            window.hasShadow = false
-
-            window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue - 1)
-            window.ignoresMouseEvents = true
-            // Avoid `.canJoinAllSpaces` so the overlay does not float over other apps'
-            // fullscreen spaces (e.g. VLC). `.moveToActiveSpace` keeps it on normal desktops.
-            // Do not use `.stationary` — it can keep high-level windows visible across
-            // fullscreen Space transitions.
-            window.collectionBehavior = [.moveToActiveSpace, .ignoresCycle]
-
-            let hostingView = NSHostingView(rootView: OverlayView(weatherManager: weatherManager, settings: settings))
-            window.contentView = hostingView
-
-            window.makeKeyAndOrderFront(nil)
-            overlayWindows.append(window)
+            overlayWindows.append(makeOverlayWindow(frame: frame))
         }
+    }
+
+    private func makeOverlayWindow(frame: NSRect) -> NSWindow {
+        let window = NSWindow(
+            contentRect: frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = false
+
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue - 1)
+        window.ignoresMouseEvents = true
+        // Avoid `.canJoinAllSpaces` so the overlay does not float over other apps'
+        // fullscreen spaces (e.g. VLC). `.moveToActiveSpace` keeps it on normal desktops.
+        // Do not use `.stationary` — it can keep high-level windows visible across
+        // fullscreen Space transitions.
+        window.collectionBehavior = [.moveToActiveSpace, .ignoresCycle]
+
+        let hostingView = NSHostingView(rootView: OverlayView(weatherManager: weatherManager, settings: settings))
+        window.contentView = hostingView
+
+        window.makeKeyAndOrderFront(nil)
+        return window
+    }
+
+    /// Brings the existing overlay windows to the active Space, keeping their views and
+    /// running animations. A window is rebuilt only if it did not follow the switch.
+    /// Screens with no menu bar (fullscreen) lose their window.
+    func syncOverlayWindowsToActiveSpace() {
+        var remaining = overlayWindows
+        var synced: [NSWindow] = []
+
+        for screen in NSScreen.screens {
+            let frame = getMenuBarFrame(for: screen)
+            guard frame.height > 1 else { continue }
+
+            if let index = remaining.firstIndex(where: { $0.frame == frame }) {
+                let window = remaining.remove(at: index)
+                window.orderFrontRegardless()
+                if window.isOnActiveSpace {
+                    synced.append(window)
+                    continue
+                }
+                window.close()
+            }
+            synced.append(makeOverlayWindow(frame: frame))
+        }
+
+        for window in remaining {
+            window.close()
+        }
+        overlayWindows = synced
     }
 
     @objc private func delayedSetupOverlayWindows() {
@@ -196,11 +228,10 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func activeSpaceDidChange() {
         // `moveToActiveSpace` does not reliably relocate these click-through overlay
-        // windows on desktop switches, so rebuild for the active Space. Screens with
-        // no menu bar (fullscreen) are skipped inside setupOverlayWindows().
+        // windows on desktop switches by itself, so pull them over explicitly.
         // If geometry is mid-transition and nothing was created, retry after settle.
         guard !weatherManager.isPaused else { return }
-        setupOverlayWindows()
+        syncOverlayWindowsToActiveSpace()
         if overlayWindows.isEmpty {
             triggerWindowRecreation()
         }

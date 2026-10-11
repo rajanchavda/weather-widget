@@ -204,6 +204,8 @@ func getMenuBarFrame(for screen: NSScreen) -> NSRect {
   - Thunderstorm (heavy rain + lightning): 3-5%
 - **Battery Impact**: ~0.5-2% per hour depending on weather conditions
 - **Rendering**: GPU-accelerated Canvas (Metal), pure vector math, no textures
+- **Frame rate**: All effects are capped at 30 fps (`OverlayAnimation.frameInterval`)
+- **Space switches**: Existing overlay windows are moved to the active Space and reused; a window is rebuilt only if it did not follow
 
 ## State Management
 

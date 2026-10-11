@@ -384,8 +384,8 @@ Working list from the October 2026 repo review. Items are ordered by priority wi
   - [x] Respect the selected temperature unit and include the city name
 - [x] **Replace the London fallback** — keep the last good data and mark it stale on fetch failure
   - [x] Loosen the 5-second request timeout
-- [ ] **Cap animation frame rate** — `TimelineView(.animation(minimumInterval: 1/30))` for all effects
-  - [ ] Stop rebuilding overlay windows on every Space switch
+- [x] **Cap animation frame rate** — `TimelineView(.animation(minimumInterval: 1/30))` for all effects
+  - [x] Stop rebuilding overlay windows on every Space switch
 - [ ] **Debounce the change sink** — one status/menu/alert pass per fetch instead of one per `@Published` change
 - [ ] **Remove dead code** — `promptSetLocation`, `clearManualLocation`, `RainDrop`, `menu.items[1]` index hacks
   - [ ] Collapse `ManualLocation` and `SavedLocation` into one source of truth
