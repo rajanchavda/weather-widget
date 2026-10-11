@@ -220,4 +220,107 @@ final class OverlaySettingsTests: XCTestCase {
         XCTAssertEqual(OverlaySettings.AuroraStyle.clearNight.rawValue, "Clear Night")
         XCTAssertEqual(OverlaySettings.AuroraStyle.thunderstorm.rawValue, "Thunderstorm")
     }
+
+    // MARK: - Persistence
+
+    private func makeDefaults() -> UserDefaults {
+        let suite = "WeatherOverlayTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return defaults
+    }
+
+    func testPersistence_roundTripsAllSettings() {
+        let defaults = makeDefaults()
+        let first = OverlaySettings(defaults: defaults)
+        first.showAurora = false
+        first.showBottomLine = true
+        first.selectedUnit = .fahrenheit
+        first.brightness = 0.25
+        first.manualWeatherCode = 0
+        first.manualIsNight = true
+        first.displayMode = .tempOnly
+        first.showWeatherAlerts = false
+        first.showAQI = true
+
+        let second = OverlaySettings(defaults: defaults)
+        XCTAssertFalse(second.showAurora)
+        XCTAssertTrue(second.showBottomLine)
+        XCTAssertEqual(second.selectedUnit, .fahrenheit)
+        XCTAssertEqual(second.brightness, 0.25)
+        XCTAssertEqual(second.manualWeatherCode, 0)
+        XCTAssertEqual(second.manualIsNight, true)
+        XCTAssertEqual(second.displayMode, .tempOnly)
+        XCTAssertFalse(second.showWeatherAlerts)
+        XCTAssertTrue(second.showAQI)
+    }
+
+    func testPersistence_emptyStoreKeepsDefaults() {
+        let stored = OverlaySettings(defaults: makeDefaults())
+        XCTAssertTrue(stored.showAurora)
+        XCTAssertEqual(stored.selectedUnit, .celsius)
+        XCTAssertEqual(stored.brightness, 1.0)
+        XCTAssertEqual(stored.displayMode, .iconAndTemp)
+        XCTAssertTrue(stored.showWeatherAlerts)
+    }
+
+    func testPersistence_clearingOptionalRemovesIt() {
+        let defaults = makeDefaults()
+        let first = OverlaySettings(defaults: defaults)
+        first.manualWeatherCode = 95
+        first.manualIsNight = false
+        first.manualWeatherCode = nil
+        first.manualIsNight = nil
+
+        let second = OverlaySettings(defaults: defaults)
+        XCTAssertNil(second.manualWeatherCode)
+        XCTAssertNil(second.manualIsNight)
+    }
+
+    func testPersistence_previewStateIsNotStored() {
+        let defaults = makeDefaults()
+        let first = OverlaySettings(defaults: defaults)
+        first.isPreviewing = true
+        first.previewWeatherCode = 95
+
+        let second = OverlaySettings(defaults: defaults)
+        XCTAssertFalse(second.isPreviewing)
+        XCTAssertNil(second.previewWeatherCode)
+    }
+
+    func testPersistence_ecoModeIsStoredOnlyOnManualSave() {
+        let defaults = makeDefaults()
+        let first = OverlaySettings(defaults: defaults)
+        first.ecoMode = true
+        XCTAssertFalse(OverlaySettings(defaults: defaults).ecoMode)
+
+        first.saveManualEcoMode()
+        XCTAssertTrue(OverlaySettings(defaults: defaults).ecoMode)
+    }
+
+    func testPersistence_ecoDimmingDoesNotOverwriteStoredBrightness() {
+        let defaults = makeDefaults()
+        let first = OverlaySettings(defaults: defaults)
+        first.brightness = 0.75
+        first.ecoMode = true
+        first.brightness = 0.50
+
+        XCTAssertEqual(OverlaySettings(defaults: defaults).brightness, 0.75)
+    }
+
+    func testPersistence_invalidStoredValuesFallBack() {
+        let defaults = makeDefaults()
+        defaults.set("kelvin", forKey: OverlaySettings.Key.selectedUnit.defaultsKey)
+        defaults.set(7.0, forKey: OverlaySettings.Key.brightness.defaultsKey)
+
+        let stored = OverlaySettings(defaults: defaults)
+        XCTAssertEqual(stored.selectedUnit, .celsius)
+        XCTAssertEqual(stored.brightness, 1.0)
+    }
+
+    func testInMemorySettings_writeNothing() {
+        OverlaySettings.removePersistedValues(from: .standard)
+        settings.selectedUnit = .fahrenheit
+        XCTAssertNil(UserDefaults.standard.object(forKey: OverlaySettings.Key.selectedUnit.defaultsKey))
+    }
 }

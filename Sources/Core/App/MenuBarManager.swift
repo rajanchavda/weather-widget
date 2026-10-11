@@ -494,6 +494,12 @@ class MenuBarManager {
         locationsItem.submenu = submenu
     }
     
+    func showUpdateAvailable(version: String) {
+        guard let menu = appDelegate.statusItem?.menu,
+              let item = findMenuItem(withAction: #selector(AppDelegate.checkForUpdates), in: menu) else { return }
+        item.title = "Update Available (v\(version))..."
+    }
+
     // MARK: - Helpers
     
     private func findMenuItem(withAction action: Selector, in menu: NSMenu) -> NSMenuItem? {
