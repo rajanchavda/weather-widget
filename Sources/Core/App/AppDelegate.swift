@@ -514,7 +514,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func refreshWeather() {
-        weatherManager.fetchWeather()
+        weatherManager.forceRefresh()
     }
 
     // MARK: - Multi-Location Management

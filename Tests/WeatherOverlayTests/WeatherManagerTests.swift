@@ -959,6 +959,412 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertEqual(manager.aqiLabel, "Moderate")
     }
 
+    // MARK: - Geo-IP Cache
+
+    /// Serves geo-IP, forecast and AQI requests, counting the geo-IP ones per provider.
+    private final class GeoStub: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _city = "Paris"
+        private var _geoFailing = false
+        private var _primaryRequests = 0
+        private var _secondaryRequests = 0
+        private var _forecastURLs: [String] = []
+        private var _onGeoRequest: (() -> Void)?
+        private var _onForecastRequest: ((String) -> Void)?
+
+        private func locked<T>(_ body: () -> T) -> T {
+            lock.lock(); defer { lock.unlock() }
+            return body()
+        }
+
+        /// City the geo-IP provider reports; each city has its own coordinates.
+        var city: String {
+            get { locked { _city } }
+            set { locked { _city = newValue } }
+        }
+        /// Fails both geo-IP providers while set. Forecast requests keep working.
+        var geoFailing: Bool {
+            get { locked { _geoFailing } }
+            set { locked { _geoFailing = newValue } }
+        }
+        var onGeoRequest: (() -> Void)? {
+            get { locked { _onGeoRequest } }
+            set { locked { _onGeoRequest = newValue } }
+        }
+        var onForecastRequest: ((String) -> Void)? {
+            get { locked { _onForecastRequest } }
+            set { locked { _onForecastRequest = newValue } }
+        }
+        var primaryRequests: Int { locked { _primaryRequests } }
+        var secondaryRequests: Int { locked { _secondaryRequests } }
+        var forecastURLs: [String] { locked { _forecastURLs } }
+
+        static func latitude(for city: String) -> Double {
+            switch city {
+            case "Paris": return 48.8566
+            case "Berlin": return 52.52
+            default: return 10.0
+            }
+        }
+
+        func install(weatherData: Data) {
+            URLProtocolMock.requestHandler = { [self] request in
+                let url = request.url!
+                let ok = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!
+                switch url.host {
+                case "freeipapi.com", "ipapi.co":
+                    let isPrimary = url.host == "freeipapi.com"
+                    let (city, failing, callback) = locked { () -> (String, Bool, (() -> Void)?) in
+                        if isPrimary { _primaryRequests += 1 } else { _secondaryRequests += 1 }
+                        return (_city, _geoFailing, _onGeoRequest)
+                    }
+                    callback?()
+                    if failing { throw URLError(.cannotConnectToHost) }
+                    let json = "{\"latitude\": \(Self.latitude(for: city)), \"longitude\": 2.0, \"cityName\": \"\(city)\"}"
+                    return (ok, json.data(using: .utf8)!)
+                case "api.open-meteo.com":
+                    let callback = locked { () -> ((String) -> Void)? in
+                        _forecastURLs.append(url.absoluteString)
+                        return _onForecastRequest
+                    }
+                    callback?(url.absoluteString)
+                    return (ok, weatherData)
+                default:
+                    // AQI is non-fatal and irrelevant here.
+                    throw URLError(.badServerResponse)
+                }
+            }
+        }
+    }
+
+    private func installGeoStub() -> GeoStub {
+        let stub = GeoStub()
+        stub.install(weatherData: weatherJSON())
+        return stub
+    }
+
+    /// Runs `action`, which must start a fetch, and waits for that fetch to finish.
+    private func waitForFetch(after action: () -> Void) async {
+        let finished = expectation(description: "fetch finished")
+        let subscription = manager.$isFetching
+            .dropFirst()
+            .filter { !$0 }
+            .first()
+            .sink { _ in finished.fulfill() }
+        action()
+        await fulfillment(of: [finished], timeout: 3.0)
+        subscription.cancel()
+    }
+
+    func testGeoCache_secondAutoRefreshWithinLifetimeMakesNoGeoRequest() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+        var clock = Date()
+        manager.now = { clock }
+
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 1)
+        XCTAssertEqual(manager.cityName, "Paris")
+
+        // The provider would now answer differently; a cached refresh must not ask it.
+        stub.city = "Berlin"
+        clock += WeatherManager.geoLocationCacheLifetime - 1
+        await fetchAndWait()
+
+        XCTAssertEqual(stub.primaryRequests, 1, "A refresh within the lifetime must reuse the cached location")
+        XCTAssertEqual(stub.secondaryRequests, 0)
+        XCTAssertEqual(stub.forecastURLs.count, 2, "The forecast itself is still refreshed")
+        XCTAssertEqual(manager.cityName, "Paris")
+        XCTAssertTrue(manager.hasData)
+        XCTAssertFalse(manager.isStale)
+    }
+
+    func testGeoCache_defaultLifetimeIsOneHour() {
+        XCTAssertEqual(WeatherManager.geoLocationCacheLifetime, 3600)
+    }
+
+    func testGeoCache_expiredEntryTriggersNewLookup() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+        var clock = Date()
+        manager.now = { clock }
+
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 1)
+
+        stub.city = "Berlin"
+        clock += WeatherManager.geoLocationCacheLifetime
+        await fetchAndWait()
+
+        XCTAssertEqual(stub.primaryRequests, 2, "An expired entry must be looked up again")
+        XCTAssertEqual(manager.cityName, "Berlin")
+
+        // The new result starts a new lifetime.
+        clock += WeatherManager.geoLocationCacheLifetime - 1
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 2)
+    }
+
+    func testGeoCache_clockMovedBackwardsTriggersNewLookup() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+        var clock = Date()
+        manager.now = { clock }
+
+        await fetchAndWait()
+        clock -= 120
+        await fetchAndWait()
+
+        XCTAssertEqual(stub.primaryRequests, 2, "An entry dated in the future cannot be trusted as fresh")
+    }
+
+    func testGeoCache_forceRefreshBypassesCache() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 1)
+
+        stub.city = "Berlin"
+        await waitForFetch { manager.forceRefresh() }
+
+        XCTAssertEqual(stub.primaryRequests, 2, "A forced refresh must look the location up again")
+        XCTAssertEqual(manager.cityName, "Berlin")
+
+        // The forced lookup refills the cache for ordinary refreshes.
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 2)
+    }
+
+    func testGeoCache_failedLookupFallsBackToHeldResult() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+        var clock = Date()
+        manager.now = { clock }
+
+        await fetchAndWait()
+        XCTAssertEqual(manager.cityName, "Paris")
+
+        // Expired, and both providers are now down.
+        clock += WeatherManager.geoLocationCacheLifetime * 5
+        stub.geoFailing = true
+        await fetchAndWait()
+
+        XCTAssertEqual(stub.primaryRequests, 2)
+        XCTAssertEqual(stub.secondaryRequests, 1, "Both providers are tried before falling back")
+        XCTAssertTrue(manager.hasData)
+        XCTAssertFalse(manager.isStale, "The refresh itself succeeded with the held location")
+        XCTAssertNil(manager.errorMessage)
+        XCTAssertEqual(manager.cityName, "Paris")
+        XCTAssertTrue(stub.forecastURLs.last?.contains("latitude=48.856600") ?? false)
+
+        // The fallback does not renew the entry: the next refresh tries the lookup again.
+        stub.geoFailing = false
+        stub.city = "Berlin"
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 3)
+        XCTAssertEqual(manager.cityName, "Berlin")
+    }
+
+    func testGeoCache_failedLookupWithNothingHeldFailsRefresh() async throws {
+        let stub = installGeoStub()
+        stub.geoFailing = true
+        manager = WeatherManager(session: .mock)
+
+        await fetchAndWait()
+
+        XCTAssertFalse(manager.hasData)
+        XCTAssertNotNil(manager.errorMessage)
+        XCTAssertTrue(stub.forecastURLs.isEmpty)
+    }
+
+    func testGeoCache_invalidationKeepsEntryAsFallbackAndStartsNoFetch() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+
+        await fetchAndWait()
+        let forecastsBefore = stub.forecastURLs.count
+
+        manager.invalidateGeoLocationCache()
+        XCTAssertFalse(manager.isFetching, "Invalidating must not start a fetch")
+
+        // The lookup is retried, fails, and the invalidated entry still stands in.
+        stub.geoFailing = true
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 2)
+        XCTAssertEqual(stub.forecastURLs.count, forecastsBefore + 1, "Only the explicit refresh fetched")
+        XCTAssertTrue(manager.hasData)
+        XCTAssertFalse(manager.isStale)
+        XCTAssertEqual(manager.cityName, "Paris")
+
+        // Once the lookup works again the new answer replaces it.
+        stub.geoFailing = false
+        stub.city = "Berlin"
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 3)
+        XCTAssertEqual(manager.cityName, "Berlin")
+    }
+
+    func testGeoCache_networkPathUpdateInvalidatesWithoutFetching() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+
+        await fetchAndWait()
+
+        // The monitor's first report describes the path it started on, not a change.
+        manager.networkPathDidUpdate(connectionRestored: false)
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 1)
+
+        // A later update with the path still satisfied (VPN toggle, Wi-Fi change).
+        let forecastsBefore = stub.forecastURLs.count
+        stub.city = "Berlin"
+        manager.networkPathDidUpdate(connectionRestored: false)
+        XCTAssertFalse(manager.isFetching, "A path change alone must not start a fetch")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(stub.primaryRequests, 1)
+        XCTAssertEqual(stub.forecastURLs.count, forecastsBefore)
+
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 2, "The next refresh after a path change looks up again")
+        XCTAssertEqual(manager.cityName, "Berlin")
+    }
+
+    func testGeoCache_networkRestoredFetchesWithFreshLookup() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+
+        await fetchAndWait()
+        manager.networkPathDidUpdate(connectionRestored: false) // initial report
+
+        stub.city = "Berlin"
+        await waitForFetch { manager.networkPathDidUpdate(connectionRestored: true) }
+
+        XCTAssertEqual(stub.primaryRequests, 2)
+        XCTAssertEqual(manager.cityName, "Berlin")
+    }
+
+    func testGeoCache_resumeInvalidates() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 1)
+
+        manager.pause()
+        stub.city = "Berlin"
+        await waitForFetch { manager.resume() }
+
+        XCTAssertEqual(stub.primaryRequests, 2, "The machine may have moved while paused")
+        XCTAssertEqual(manager.cityName, "Berlin")
+    }
+
+    func testGeoCache_savedLocationNeverTouchesCache() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+        let mumbai = SavedLocation(id: UUID(), name: "Mumbai", latitude: 19.076, longitude: 72.8777)
+
+        await waitForFetch { manager.addSavedLocation(mumbai) }
+        await fetchAndWait()
+        await waitForFetch { manager.forceRefresh() }
+
+        XCTAssertEqual(stub.primaryRequests, 0, "A saved location never asks geo-IP")
+        XCTAssertEqual(stub.secondaryRequests, 0)
+        XCTAssertEqual(manager.cityName, "Mumbai")
+        XCTAssertTrue(stub.forecastURLs.allSatisfy { $0.contains("latitude=19.076000") })
+
+        // Nothing was cached on its behalf: Auto has to look itself up.
+        await waitForFetch { manager.switchToAutoLocation() }
+        XCTAssertEqual(stub.primaryRequests, 1)
+        XCTAssertEqual(manager.cityName, "Paris")
+        XCTAssertTrue(stub.forecastURLs.last?.contains("latitude=48.856600") ?? false)
+    }
+
+    func testGeoCache_switchingBetweenSavedAndAutoServesTheRightLocation() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+        let mumbai = SavedLocation(id: UUID(), name: "Mumbai", latitude: 19.076, longitude: 72.8777)
+
+        await fetchAndWait()
+        XCTAssertEqual(manager.cityName, "Paris")
+
+        await waitForFetch { manager.addSavedLocation(mumbai) }
+        XCTAssertEqual(manager.cityName, "Mumbai")
+        XCTAssertTrue(stub.forecastURLs.last?.contains("latitude=19.076000") ?? false)
+
+        await waitForFetch { manager.switchToAutoLocation() }
+        XCTAssertEqual(manager.cityName, "Paris")
+        XCTAssertTrue(stub.forecastURLs.last?.contains("latitude=48.856600") ?? false)
+        XCTAssertEqual(stub.primaryRequests, 1, "Back on Auto within the lifetime, the cached lookup is reused")
+    }
+
+    func testGeoCache_supersededFetchDoesNotWriteCache() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+        let mumbai = SavedLocation(id: UUID(), name: "Mumbai", latitude: 19.076, longitude: 72.8777)
+
+        let lookupInFlight = expectation(description: "first geo lookup in flight")
+        let supersededFetchContinued = expectation(description: "superseded fetch got its location")
+        stub.onGeoRequest = { lookupInFlight.fulfill() }
+        stub.onForecastRequest = { url in
+            if url.contains("latitude=48.856600") { supersededFetchContinued.fulfill() }
+        }
+        URLProtocolMock.responseDelay = 0.3
+        URLProtocolMock.delayedURLs = ["freeipapi.com"]
+
+        // Auto fetch starts its lookup, then a saved location supersedes it.
+        manager.fetchWeather()
+        await fulfillment(of: [lookupInFlight], timeout: 3.0)
+        stub.onGeoRequest = nil
+        await waitForFetch { manager.addSavedLocation(mumbai) }
+        XCTAssertEqual(manager.cityName, "Mumbai")
+
+        // The superseded lookup returns and that fetch moves on to its (discarded) forecast.
+        await fulfillment(of: [supersededFetchContinued], timeout: 3.0)
+        stub.onForecastRequest = nil
+        URLProtocolMock.responseDelay = 0
+        URLProtocolMock.delayedURLs = []
+        XCTAssertEqual(manager.cityName, "Mumbai")
+
+        await waitForFetch { manager.switchToAutoLocation() }
+        XCTAssertEqual(stub.primaryRequests, 2, "A superseded fetch must not have filled the cache")
+        XCTAssertEqual(manager.cityName, "Paris")
+    }
+
+    func testGeoCache_invalidationDuringLookupIsNotLost() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+
+        let lookupInFlight = expectation(description: "geo lookup in flight")
+        stub.onGeoRequest = { lookupInFlight.fulfill() }
+        URLProtocolMock.responseDelay = 0.2
+        URLProtocolMock.delayedURLs = ["freeipapi.com"]
+
+        let finished = expectation(description: "fetch finished")
+        let subscription = manager.$isFetching
+            .dropFirst()
+            .filter { !$0 }
+            .first()
+            .sink { _ in finished.fulfill() }
+
+        // The network changes while the lookup is in flight: its answer may describe the
+        // old network, so it serves this refresh but must not be cached as fresh.
+        manager.fetchWeather()
+        await fulfillment(of: [lookupInFlight], timeout: 3.0)
+        stub.onGeoRequest = nil
+        manager.invalidateGeoLocationCache()
+        await fulfillment(of: [finished], timeout: 3.0)
+        subscription.cancel()
+        URLProtocolMock.responseDelay = 0
+        URLProtocolMock.delayedURLs = []
+
+        XCTAssertEqual(manager.cityName, "Paris")
+        XCTAssertEqual(stub.primaryRequests, 1)
+
+        await fetchAndWait()
+        XCTAssertEqual(stub.primaryRequests, 2, "The refresh after the invalidation must look up again")
+    }
+
     // MARK: - JSON Fixtures
 
     private func freeGeoJSON() -> Data {

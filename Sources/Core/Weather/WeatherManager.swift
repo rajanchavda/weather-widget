@@ -35,6 +35,24 @@ class WeatherManager: ObservableObject {
     /// Identifies the location the current data was fetched for.
     private var dataSourceKey: String?
 
+    /// How long a geo-IP result is reused before it is looked up again.
+    static let geoLocationCacheLifetime: TimeInterval = 3600
+    /// Clock for the geo-IP cache, replaceable so tests can age an entry without sleeping.
+    var now: () -> Date = { Date() }
+
+    private struct CachedGeoLocation {
+        let location: GeoResponse
+        let fetchedAt: Date
+        /// Set when the network may have changed: look up again, but keep this as a fallback.
+        var needsRevalidation: Bool
+    }
+    /// Last successful geo-IP result. In memory only, so a relaunch always looks up afresh.
+    private var cachedGeoLocation: CachedGeoLocation?
+    /// Bumped on every invalidation, so a lookup that was already in flight is not stored as fresh.
+    private var geoCacheEpoch: Int = 0
+    /// The path monitor reports the current path once when it starts; that is not a change.
+    private var hasReceivedInitialNetworkPath = false
+
     private var timer: AnyCancellable?
     private var fetchGeneration: Int = 0
     private let pathMonitor = NWPathMonitor()
@@ -93,8 +111,37 @@ class WeatherManager: ObservableObject {
         guard isPaused else { return }
         isPaused = false
         print("[WeatherManager] Resumed — restarting timer and refreshing.")
+        // The machine may have moved while it was asleep or locked.
+        invalidateGeoLocationCache()
         fetchWeather()
         startTimer()
+    }
+
+    /// Refreshes at the user's explicit request, looking the location up again instead of
+    /// trusting the cached geo-IP result.
+    func forceRefresh() {
+        invalidateGeoLocationCache()
+        fetchWeather()
+    }
+
+    /// Makes the next auto-location refresh look the location up again. The held result is
+    /// kept, marked for revalidation, so it can still stand in if that lookup fails.
+    /// Does not start a fetch.
+    func invalidateGeoLocationCache() {
+        geoCacheEpoch &+= 1
+        cachedGeoLocation?.needsRevalidation = true
+    }
+
+    /// Any path update after the monitor's initial report can mean a new public IP (VPN
+    /// toggle, Wi-Fi change) even while the path stays satisfied.
+    func networkPathDidUpdate(connectionRestored: Bool) {
+        if hasReceivedInitialNetworkPath {
+            invalidateGeoLocationCache()
+        }
+        hasReceivedInitialNetworkPath = true
+        if connectionRestored {
+            fetchWeather()
+        }
     }
 
     private func startTimer() {
@@ -112,11 +159,14 @@ class WeatherManager: ObservableObject {
             let previous = self.lastPathStatus
             self.lastPathStatus = status
             print("[WeatherManager] Network path status updated: \(status). Previous status: \(previous)")
-            if status == .satisfied && previous != .satisfied {
+            let restored = status == .satisfied && previous != .satisfied
+            if restored {
                 print("[WeatherManager] Network connection restored. Triggering instant fetch...")
-                Task { @MainActor [weak self] in
-                    self?.fetchWeather()
-                }
+            }
+            // This handler runs off the main thread and the geo-IP cache is main-actor state,
+            // so hop there. One task keeps the invalidation ahead of the reconnect fetch.
+            Task { @MainActor [weak self] in
+                self?.networkPathDidUpdate(connectionRestored: restored)
             }
         }
         pathMonitor.start(queue: DispatchQueue.global(qos: .background))
@@ -261,8 +311,7 @@ class WeatherManager: ObservableObject {
                     lon = manual.longitude
                     city = manual.name
                 } else {
-                    print("[WeatherManager] Fetching coordinates from IP geolocator...")
-                    let location = try await fetchLocation()
+                    let location = try await autoLocation(generation: generation)
                     lat = location.latitude
                     lon = location.longitude
                     city = location.city ?? "My Location"
@@ -339,6 +388,41 @@ class WeatherManager: ObservableObject {
             errorMessage = "Fetch Failed: \(error.localizedDescription)"
         }
         isFetching = false
+    }
+
+    /// Location for an auto (IP-based) refresh: the cached geo-IP result while it is fresh,
+    /// otherwise a new lookup. If the lookup fails, the last held result is used rather
+    /// than failing the refresh, even when it is expired or marked for revalidation.
+    private func autoLocation(generation: Int) async throws -> GeoResponse {
+        if let cached = cachedGeoLocation, !cached.needsRevalidation {
+            let age = now().timeIntervalSince(cached.fetchedAt)
+            if age >= 0 && age < Self.geoLocationCacheLifetime {
+                print("[WeatherManager] Using cached geo-IP location (age=\(Int(age))s).")
+                return cached.location
+            }
+        }
+
+        print("[WeatherManager] Fetching coordinates from IP geolocator...")
+        let epoch = geoCacheEpoch
+        do {
+            let location = try await fetchLocation()
+            // A superseded fetch never writes the cache, so an older lookup cannot replace
+            // the result of a newer one. If the cache was invalidated while this lookup was
+            // in flight, the answer may describe the old network: use it for this refresh
+            // but leave it marked so the next one looks up again.
+            if generation == fetchGeneration {
+                cachedGeoLocation = CachedGeoLocation(
+                    location: location,
+                    fetchedAt: now(),
+                    needsRevalidation: epoch != geoCacheEpoch
+                )
+            }
+            return location
+        } catch {
+            guard let held = cachedGeoLocation else { throw error }
+            print("[WeatherManager] Geo-IP lookup failed: \(error.localizedDescription). Using last known location.")
+            return held.location
+        }
     }
 
     private func fetchLocation() async throws -> GeoResponse {
