@@ -363,7 +363,8 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     private func enterEcoMode() {
         brightnessBeforeEco = settings.brightness
         settings.ecoMode = true
-        settings.brightness = 0.50
+        // Eco only dims; never raise a level that is already lower.
+        settings.brightness = min(settings.brightness, 0.50)
     }
 
     private func exitEcoMode() {

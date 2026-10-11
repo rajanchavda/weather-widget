@@ -157,6 +157,16 @@ final class AppDelegateTests: XCTestCase {
         XCTAssertEqual(appDelegate.settings.brightness, 0.75, "Leaving Eco Mode must restore the pre-Eco brightness")
     }
 
+    func testToggleEcoMode_onDoesNotRaiseLowerBrightness() {
+        appDelegate.settings.brightness = 0.25
+
+        appDelegate.toggleEcoMode()
+        XCTAssertEqual(appDelegate.settings.brightness, 0.25, "Eco Mode must not brighten a dimmer setting")
+
+        appDelegate.toggleEcoMode()
+        XCTAssertEqual(appDelegate.settings.brightness, 0.25)
+    }
+
     func testToggleEcoMode_offKeepsBrightnessChosenDuringEco() {
         appDelegate.settings.brightness = 1.0
         appDelegate.toggleEcoMode()
