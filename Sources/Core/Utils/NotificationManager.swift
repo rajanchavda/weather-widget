@@ -1,4 +1,5 @@
 import UserNotifications
+import os
 
 /// A notification ready to deliver.
 struct WeatherAlert: Equatable {
@@ -36,7 +37,7 @@ class NotificationManager {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { [weak self] granted, _ in
             DispatchQueue.main.async {
                 self?.authorized = granted
-                print("[NotificationManager] Authorization \(granted ? "granted" : "denied")")
+                Log.notifications.notice("Authorization \(granted ? "granted" : "denied", privacy: .public)")
             }
         }
     }

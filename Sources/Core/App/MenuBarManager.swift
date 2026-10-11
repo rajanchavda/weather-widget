@@ -7,7 +7,7 @@ class MenuBarManager {
     unowned let weatherManager: WeatherManager
     unowned let settings: OverlaySettings
 
-    private enum MenuTag: Int {
+    enum MenuTag: Int {
         case location = 1001
         case condition = 1002
         case locations = 1003
@@ -509,6 +509,12 @@ class MenuBarManager {
         guard let menu = appDelegate.statusItem?.menu,
               let item = findMenuItem(withAction: #selector(AppDelegate.checkForUpdates), in: menu) else { return }
         item.title = "Update Available (v\(version))..."
+    }
+
+    func showUpdateInProgress() {
+        guard let menu = appDelegate.statusItem?.menu,
+              let item = findMenuItem(withTag: MenuTag.condition.rawValue, in: menu) else { return }
+        item.title = "Status: Downloading update via Homebrew..."
     }
 
     // MARK: - Helpers
