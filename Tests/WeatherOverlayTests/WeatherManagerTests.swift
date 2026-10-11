@@ -81,6 +81,7 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertEqual(manager.hourlyTemps.count, 12)
         XCTAssertEqual(manager.currentHourIndex, 0, "Hourly window should start at the current hour")
         XCTAssertFalse(manager.hourlyTimes.isEmpty)
+        XCTAssertFalse(manager.isUsingFallbackLocation)
         XCTAssertEqual(manager.hourlyTemps.first, 22.5, "Current-hour slice should start with the marked current-hour temp")
         XCTAssertEqual(manager.cityName, "Paris")
         XCTAssertFalse(manager.isNight)
@@ -123,6 +124,7 @@ final class WeatherManagerTests: XCTestCase {
         await fulfillment(of: [fetchExpectation], timeout: 3.0)
 
         XCTAssertEqual(manager.cityName, "London (Fallback)")
+        XCTAssertTrue(manager.isUsingFallbackLocation)
         XCTAssertEqual(manager.currentTemp, 22.5)
         XCTAssertTrue(manager.hasData)
         XCTAssertNil(manager.errorMessage)

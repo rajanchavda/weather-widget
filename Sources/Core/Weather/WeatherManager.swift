@@ -24,6 +24,8 @@ class WeatherManager: ObservableObject {
     var currentHourIndex: Int = -1
     /// UTC offset for the active forecast location (from Open-Meteo `timezone=auto`).
     var forecastUtcOffsetSeconds: Int? = nil
+    /// True while the displayed weather is the London fallback rather than the user's location.
+    var isUsingFallbackLocation = false
     @Published var activeLocationId: UUID? = nil
 
     private let activeIdKey = "WeatherOverlay.activeLocationId"
@@ -421,6 +423,7 @@ class WeatherManager: ObservableObject {
         // Window is already aligned to "now", so current hour is index 0 when data exists.
         self.currentHourIndex = window.times.isEmpty ? -1 : 0
         self.cityName = cityName
+        self.isUsingFallbackLocation = useLocalNightFallback
         if useLocalNightFallback {
             self.isNight = computeIsNightLocally(utcOffsetSeconds: offset)
         } else {
