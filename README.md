@@ -379,9 +379,9 @@ Working list from the October 2026 repo review. Items are ordered by priority wi
   - [x] Drain the brew output pipe while the process runs so verbose output can't hang it
 - [x] **Run tests in CI** — add a PR workflow running `swift test`, and gate `release.yml` on it
   - [x] Generate real release notes instead of the `[Add release notes here]` placeholder
-- [ ] **Fix alert spam** — notify on event onset instead of once per forecast hour
-  - [ ] Suppress alerts while showing fallback data
-  - [ ] Respect the selected temperature unit and include the city name
+- [x] **Fix alert spam** — notify on event onset instead of once per forecast hour
+  - [x] Suppress alerts while showing fallback data
+  - [x] Respect the selected temperature unit and include the city name
 - [ ] **Replace the London fallback** — keep the last good data and mark it stale on fetch failure
   - [ ] Loosen the 5-second request timeout
 - [ ] **Cap animation frame rate** — `TimelineView(.animation(minimumInterval: 1/30))` for all effects

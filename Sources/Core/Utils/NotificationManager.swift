@@ -1,15 +1,35 @@
 import UserNotifications
 
+/// A notification ready to deliver.
+struct WeatherAlert: Equatable {
+    let id: String
+    let title: String
+    let subtitle: String
+    let body: String
+}
+
 @MainActor
 class NotificationManager {
+    /// Hours after the current one that are checked for an approaching event.
+    static let lookAheadHours = 2
+    /// Damps repeats when a forecast flickers in and out of the look-ahead window.
+    static let renotifyCooldown: TimeInterval = 3 * 3600
+
+    private static let freezingCategory = "Freezing Temperature"
+
     private let weatherManager: WeatherManager
     private let settings: OverlaySettings
-    private var alertedEvents = Set<String>()
+    private let now: () -> Date
+    /// Event categories that are ongoing or already announced; cleared once the event has passed.
+    private var activeCategories = Set<String>()
+    private var lastNotified: [String: Date] = [:]
+    private var trackedCity: String?
     private var authorized = false
 
-    init(weatherManager: WeatherManager, settings: OverlaySettings) {
+    init(weatherManager: WeatherManager, settings: OverlaySettings, now: @escaping () -> Date = Date.init) {
         self.weatherManager = weatherManager
         self.settings = settings
+        self.now = now
     }
 
     func requestAuthorization() {
@@ -22,46 +42,96 @@ class NotificationManager {
     }
 
     func evaluateAndNotify() {
-        guard authorized, settings.showWeatherAlerts else { return }
-        guard weatherManager.hasData else { return }
-        // Hourly window is aligned to the current hour at index 0; alerts look ahead from the next hour.
-        guard weatherManager.hourlyCodes.count >= 2 else { return }
-
-        let startIndex = 1
-        let endIndex = min(startIndex + 2, weatherManager.hourlyCodes.count)
-
-        for i in startIndex..<endIndex {
-            let code = weatherManager.hourlyCodes[safe: i] ?? 0
-            let timeStr = weatherManager.hourlyTimes[safe: i] ?? ""
-            let precip = weatherManager.hourlyPrecipitation[safe: i] ?? 0
-
-            guard let event = Self.alertEvent(forWeatherCode: code, precipitation: precip) else { continue }
-            notifyIfNeeded(emoji: event.emoji, title: event.title, time: timeStr, bodySuffix: event.bodySuffix)
-        }
-
-        for i in startIndex..<endIndex {
-            guard let temp = weatherManager.hourlyTemps[safe: i], temp <= 0 else { continue }
-            let timeStr = weatherManager.hourlyTimes[safe: i] ?? ""
-            let key = "freezing:\(timeStr)"
-            guard !alertedEvents.contains(key) else { continue }
-            alertedEvents.insert(key)
-
-            let displayTime = formatTime(timeStr)
-            let minAway = minutesAway(timeStr)
-            let body: String
-            if let min = minAway, min >= 1 {
-                body = "Temperature dropping to \(Int(temp))°C in about \(min) minutes — possible ice"
-            } else {
-                body = "Temperature dropping to \(Int(temp))°C at \(displayTime) — possible ice"
-            }
-
+        guard authorized else { return }
+        for alert in collectAlerts() {
             let content = UNMutableNotificationContent()
-            content.title = "⚠️ Freezing Temperature"
-            content.body = body
+            content.title = alert.title
+            content.subtitle = alert.subtitle
+            content.body = alert.body
             content.sound = .default
-
-            schedule(content, id: key)
+            let request = UNNotificationRequest(identifier: alert.id, content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(request)
         }
+    }
+
+    /// Returns one alert per event that is newly approaching. An event that is already
+    /// under way, or was already announced and has not yet passed, produces nothing.
+    func collectAlerts() -> [WeatherAlert] {
+        guard settings.showWeatherAlerts, weatherManager.hasData else { return [] }
+        // Fallback data describes another city, not the user's.
+        guard !weatherManager.isUsingFallbackLocation else { return [] }
+        // Hourly window is aligned to the current hour at index 0; alerts look ahead from the next hour.
+        guard weatherManager.hourlyCodes.count >= 2 else { return [] }
+
+        let city = weatherManager.cityName
+        if trackedCity != city {
+            activeCategories.removeAll()
+            lastNotified.removeAll()
+            trackedCity = city
+        }
+
+        let current = Set(events(atHour: 0).map(\.category))
+        var upcoming: [(category: String, title: String, time: String, body: (String) -> String)] = []
+        let lastHour = min(Self.lookAheadHours, weatherManager.hourlyCodes.count - 1)
+        for hour in 1...lastHour {
+            for event in events(atHour: hour) where !upcoming.contains(where: { $0.category == event.category }) {
+                upcoming.append((event.category, event.title, weatherManager.hourlyTimes[safe: hour] ?? "", event.body))
+            }
+        }
+
+        let upcomingCategories = Set(upcoming.map(\.category))
+        activeCategories = activeCategories.filter { current.contains($0) || upcomingCategories.contains($0) }
+        activeCategories.formUnion(current)
+
+        var alerts: [WeatherAlert] = []
+        for event in upcoming where !activeCategories.contains(event.category) {
+            activeCategories.insert(event.category)
+            if let last = lastNotified[event.category], now().timeIntervalSince(last) < Self.renotifyCooldown {
+                continue
+            }
+            lastNotified[event.category] = now()
+
+            let when: String
+            if let minutes = minutesAway(event.time), minutes >= 1 {
+                when = "in about \(minutes) minutes"
+            } else {
+                when = "at \(formatTime(event.time))"
+            }
+            alerts.append(WeatherAlert(
+                id: "\(event.category)|\(city)|\(event.time)",
+                title: event.title,
+                subtitle: city,
+                body: event.body(when)
+            ))
+        }
+        return alerts
+    }
+
+    /// Alert-worthy conditions in one forecast hour. `body` takes the "in about N minutes" phrase.
+    private func events(atHour hour: Int) -> [(category: String, title: String, body: (String) -> String)] {
+        var result: [(category: String, title: String, body: (String) -> String)] = []
+
+        let code = weatherManager.hourlyCodes[safe: hour] ?? 0
+        let precip = weatherManager.hourlyPrecipitation[safe: hour] ?? 0
+        if let event = Self.alertEvent(forWeatherCode: code, precipitation: precip) {
+            let suffix = event.bodySuffix.map { " \($0)" } ?? ""
+            result.append((event.title, "\(event.emoji) \(event.title)", { "\(event.title) expected \($0)\(suffix)" }))
+        }
+
+        if let temp = weatherManager.hourlyTemps[safe: hour], temp <= 0 {
+            let displayed = formatTemperature(temp)
+            result.append((
+                Self.freezingCategory,
+                "⚠️ \(Self.freezingCategory)",
+                { "Temperature dropping to \(displayed) \($0) — possible ice" }
+            ))
+        }
+        return result
+    }
+
+    private func formatTemperature(_ celsius: Double) -> String {
+        let value = settings.selectedUnit == .fahrenheit ? celsius * 9.0 / 5.0 + 32.0 : celsius
+        return "\(Int(value.rounded()))\(settings.selectedUnit.rawValue)"
     }
 
     /// Maps a WMO code (+ precip) to a weather alert. Freezing rain is classified before rain.
@@ -88,33 +158,6 @@ class NotificationManager {
         return nil
     }
 
-    private func notifyIfNeeded(emoji: String, title: String, time: String, bodySuffix: String? = nil) {
-        let key = "\(title):\(time)"
-        guard !alertedEvents.contains(key) else { return }
-        alertedEvents.insert(key)
-
-        let displayTime = formatTime(time)
-        let minAway = minutesAway(time)
-        let body: String
-        if let min = minAway, min >= 1 {
-            body = "\(title) expected in about \(min) minutes" + (bodySuffix.map { " \($0)" } ?? "")
-        } else {
-            body = "\(title) expected at \(displayTime)" + (bodySuffix.map { " \($0)" } ?? "")
-        }
-
-        let content = UNMutableNotificationContent()
-        content.title = "\(emoji) \(title)"
-        content.body = body
-        content.sound = .default
-
-        schedule(content, id: key)
-    }
-
-    private func schedule(_ content: UNMutableNotificationContent, id: String) {
-        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
-    }
-
     private func formatTime(_ iso: String) -> String {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd'T'HH:mm"
@@ -133,7 +176,7 @@ class NotificationManager {
         df.locale = Locale(identifier: "en_US_POSIX")
         df.timeZone = forecastTimeZone()
         guard let date = df.date(from: iso) else { return nil }
-        let diff = date.timeIntervalSinceNow
+        let diff = date.timeIntervalSince(now())
         guard diff > 0 else { return nil }
         return Int(ceil(diff / 60))
     }

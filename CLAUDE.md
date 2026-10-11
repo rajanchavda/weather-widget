@@ -32,7 +32,9 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 - `@MainActor` class managing `UserNotifications` for weather alerts
 - Requests `.alert` + `.sound` authorization on launch
 - Evaluates hourly forecast for: thunderstorms, rain (with precipitation gate), freezing rain, snow, fog, freezing temperatures
-- Uses `alertedEvents` dedup set to avoid repeat notifications
+- Notifies on event onset only: one alert when an event first enters the 2-hour look-ahead, none while it is ongoing, re-armed once it has passed (3-hour cooldown damps flickering forecasts)
+- No alerts while showing the London fallback; alert state resets when the city changes
+- Notification subtitle carries the city; freezing alerts use the selected temperature unit
 - Formats time strings to `h:mm a` display, includes "X minutes away" logic
 
 #### 2. **WeatherManager** (`Sources/Core/Weather/WeatherManager.swift`)
