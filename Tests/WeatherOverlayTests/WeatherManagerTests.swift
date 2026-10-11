@@ -255,17 +255,17 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertTrue(manager.errorMessage?.contains("Fetch Failed") ?? false)
     }
 
-    // MARK: - Manual Location Override
+    // MARK: - Saved Location Override
 
-    func testFetchWeather_manualLocationOverridesGeo() async throws {
+    func testFetchWeather_activeSavedLocationOverridesGeo() async throws {
         let weatherData = weatherJSON()
 
-        let fetchExpectation = expectation(description: "manual location fetch completes")
+        let fetchExpectation = expectation(description: "saved location fetch completes")
 
         URLProtocolMock.requestHandler = { request in
             let urlString = request.url?.absoluteString ?? ""
             if urlString.contains("freeipapi.com") || urlString.contains("ipapi.co") {
-                XCTFail("Should not call geo API when manual location is set")
+                XCTFail("Should not call geo API when a saved location is active")
                 throw URLError(.badURL)
             }
             if urlString.contains("open-meteo.com") {
@@ -277,8 +277,13 @@ final class WeatherManagerTests: XCTestCase {
             fatalError("Unexpected request: \(urlString)")
         }
 
+        // Persisted selection, as after a relaunch: a plain refresh must fetch for it.
+        let paris = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        SavedLocation.saveAll([paris])
+        UserDefaults.standard.set(paris.id.uuidString, forKey: "WeatherOverlay.activeLocationId")
+
         manager = WeatherManager(session: .mock)
-        manager.manualLocation = ManualLocation(name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        XCTAssertEqual(manager.activeLocation, paris)
 
         manager.$cityName
             .dropFirst()
@@ -315,6 +320,11 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertEqual(result?.name, "Mumbai, Maharashtra")
         XCTAssertEqual(result?.latitude, 19.0760)
         XCTAssertEqual(result?.longitude, 72.8777)
+
+        let again = try await manager.searchCity("Mumbai")
+        XCTAssertNotNil(again)
+        XCTAssertNotEqual(again?.id, result?.id, "Every search result gets its own id")
+        XCTAssertTrue(manager.savedLocations.isEmpty, "Searching does not save anything")
     }
 
     func testSearchCity_noResults() async throws {
@@ -740,7 +750,7 @@ final class WeatherManagerTests: XCTestCase {
         await fulfillment(of: [switchExpectation], timeout: 3.0)
 
         XCTAssertNil(manager.activeLocationId)
-        XCTAssertNil(manager.manualLocation)
+        XCTAssertNil(manager.activeLocation)
         XCTAssertTrue(manager.savedLocations.isEmpty == false)
     }
 
@@ -782,7 +792,7 @@ final class WeatherManagerTests: XCTestCase {
 
         XCTAssertTrue(manager.savedLocations.isEmpty)
         XCTAssertNil(manager.activeLocationId)
-        XCTAssertNil(manager.manualLocation)
+        XCTAssertNil(manager.activeLocation)
 
         manager.$hasData
             .dropFirst()
@@ -803,7 +813,7 @@ final class WeatherManagerTests: XCTestCase {
         let manager = WeatherManager(session: .mock)
         manager.switchToLocation(id: UUID())
         XCTAssertNil(manager.activeLocationId)
-        XCTAssertNil(manager.manualLocation)
+        XCTAssertNil(manager.activeLocation)
     }
 
     func testSavedLocations_addPersistsActiveLocationId() {
@@ -823,6 +833,7 @@ final class WeatherManagerTests: XCTestCase {
 
         let restored = WeatherManager(session: .mock)
         XCTAssertEqual(restored.activeLocationId, saved.id)
+        XCTAssertEqual(restored.activeLocation, saved)
     }
 
     func testSavedLocations_removeClearsPersistedActiveLocationId() {
@@ -842,27 +853,217 @@ final class WeatherManagerTests: XCTestCase {
         XCTAssertNil(restored.activeLocationId)
     }
 
-    func testSavedLocations_saveCurrentAsSavedLocation() {
+    func testActiveLocation_followsSelection() {
+        URLProtocolMock.requestHandler = { _ in
+            throw URLError(.notConnectedToInternet)
+        }
         let manager = WeatherManager(session: .mock)
-        manager.cityName = "Mumbai"
-        manager.manualLocation = ManualLocation(name: "Mumbai", latitude: 19.0760, longitude: 72.8777)
+        let paris = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        let tokyo = SavedLocation(id: UUID(), name: "Tokyo", latitude: 35.6762, longitude: 139.6503)
+        XCTAssertNil(manager.activeLocation)
 
-        manager.saveCurrentAsSavedLocation()
+        manager.addSavedLocation(paris)
+        XCTAssertEqual(manager.activeLocation, paris)
 
-        XCTAssertEqual(manager.savedLocations.count, 1)
-        XCTAssertEqual(manager.savedLocations.first?.name, "Mumbai")
-        XCTAssertEqual(manager.savedLocations.first?.latitude, 19.0760)
-        XCTAssertEqual(manager.activeLocationId, manager.savedLocations.first?.id)
+        manager.addSavedLocation(tokyo)
+        XCTAssertEqual(manager.activeLocation, tokyo)
+
+        manager.switchToLocation(id: paris.id)
+        XCTAssertEqual(manager.activeLocation, paris)
+
+        manager.removeSavedLocation(id: tokyo.id)
+        XCTAssertEqual(manager.activeLocation, paris, "Removing another city keeps the selection")
+
+        manager.switchToAutoLocation()
+        XCTAssertNil(manager.activeLocation)
+        XCTAssertEqual(manager.savedLocations, [paris])
     }
 
-    func testSavedLocations_saveCurrentWithoutManualLocationDoesNothing() {
+    func testActiveLocation_isNilWhenIdMatchesNoSavedLocation() {
         let manager = WeatherManager(session: .mock)
-        manager.cityName = "Paris"
-        manager.manualLocation = nil
+        manager.savedLocations = [SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)]
+        manager.activeLocationId = UUID()
 
-        manager.saveCurrentAsSavedLocation()
+        XCTAssertNil(manager.activeLocation)
+    }
+
+    func testSavedLocations_danglingPersistedActiveIdFallsBackToAuto() {
+        let paris = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        SavedLocation.saveAll([paris])
+        UserDefaults.standard.set(UUID().uuidString, forKey: "WeatherOverlay.activeLocationId")
+
+        let manager = WeatherManager(session: .mock)
+
+        XCTAssertNil(manager.activeLocationId)
+        XCTAssertNil(manager.activeLocation)
+        XCTAssertEqual(manager.savedLocations, [paris])
+    }
+
+    func testSavedLocations_switchingFetchesForTheSelectedCity() async throws {
+        let stub = installGeoStub()
+        manager = WeatherManager(session: .mock)
+        let mumbai = SavedLocation(id: UUID(), name: "Mumbai", latitude: 19.076, longitude: 72.8777)
+        let tokyo = SavedLocation(id: UUID(), name: "Tokyo", latitude: 35.6762, longitude: 139.6503)
+
+        await waitForFetch { manager.addSavedLocation(mumbai) }
+        await waitForFetch { manager.addSavedLocation(tokyo) }
+        XCTAssertEqual(manager.cityName, "Tokyo")
+        XCTAssertTrue(stub.forecastURLs.last?.contains("latitude=35.676200") ?? false)
+
+        await waitForFetch { manager.switchToLocation(id: mumbai.id) }
+        XCTAssertEqual(manager.cityName, "Mumbai")
+        XCTAssertTrue(stub.forecastURLs.last?.contains("latitude=19.076000") ?? false)
+
+        // Removing the selected city falls back to Auto, not to another saved city.
+        await waitForFetch { manager.removeSavedLocation(id: mumbai.id) }
+        XCTAssertEqual(manager.cityName, "Paris")
+        XCTAssertTrue(stub.forecastURLs.last?.contains("latitude=48.856600") ?? false)
+        XCTAssertEqual(manager.savedLocations, [tokyo])
+        XCTAssertEqual(stub.primaryRequests, 1)
+    }
+
+    func testSavedLocations_neverWriteLegacyKey() {
+        URLProtocolMock.requestHandler = { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+        let manager = WeatherManager(session: .mock)
+        let paris = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        let tokyo = SavedLocation(id: UUID(), name: "Tokyo", latitude: 35.6762, longitude: 139.6503)
+
+        manager.addSavedLocation(paris)
+        XCTAssertNil(UserDefaults.standard.object(forKey: legacyKey))
+        manager.addSavedLocation(tokyo)
+        manager.switchToLocation(id: paris.id)
+        XCTAssertNil(UserDefaults.standard.object(forKey: legacyKey))
+        manager.switchToAutoLocation()
+        manager.removeSavedLocation(id: tokyo.id)
+        XCTAssertNil(UserDefaults.standard.object(forKey: legacyKey))
+    }
+
+    // MARK: - Legacy Manual Location Migration
+
+    private let legacyKey = "WeatherOverlay.manualLocation"
+
+    /// Stores a city the way versions from before multi-city support did.
+    private func storeLegacyLocation(name: String, latitude: Double, longitude: Double) {
+        let json = "{\"name\": \"\(name)\", \"latitude\": \(latitude), \"longitude\": \(longitude)}"
+        UserDefaults.standard.set(json.data(using: .utf8)!, forKey: legacyKey)
+    }
+
+    func testLegacyMigration_becomesActiveSavedLocationAndKeyIsRemoved() {
+        storeLegacyLocation(name: "Berlin", latitude: 52.52, longitude: 13.405)
+
+        let manager = WeatherManager(session: .mock)
+
+        XCTAssertEqual(manager.savedLocations.count, 1)
+        XCTAssertEqual(manager.savedLocations.first?.name, "Berlin")
+        XCTAssertEqual(manager.savedLocations.first?.latitude, 52.52)
+        XCTAssertEqual(manager.savedLocations.first?.longitude, 13.405)
+        XCTAssertEqual(manager.activeLocationId, manager.savedLocations.first?.id)
+        XCTAssertEqual(manager.activeLocation?.name, "Berlin")
+        XCTAssertNil(UserDefaults.standard.object(forKey: legacyKey), "Legacy key is removed once migrated")
+
+        XCTAssertEqual(SavedLocation.loadAll(), manager.savedLocations, "Migrated location is persisted")
+        XCTAssertEqual(
+            UserDefaults.standard.string(forKey: "WeatherOverlay.activeLocationId"),
+            manager.activeLocationId?.uuidString
+        )
+    }
+
+    func testLegacyMigration_migratedLocationIsFetchedFor() async throws {
+        let stub = installGeoStub()
+        storeLegacyLocation(name: "Berlin", latitude: 52.52, longitude: 13.405)
+        manager = WeatherManager(session: .mock)
+
+        await fetchAndWait()
+
+        XCTAssertEqual(manager.cityName, "Berlin")
+        XCTAssertTrue(stub.forecastURLs.last?.contains("latitude=52.520000&longitude=13.405000") ?? false)
+        XCTAssertEqual(stub.primaryRequests, 0, "A migrated city is a saved location: no geo-IP lookup")
+    }
+
+    func testLegacyMigration_withExistingSavedLocationsOnlyRemovesKey() {
+        let paris = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        let tokyo = SavedLocation(id: UUID(), name: "Tokyo", latitude: 35.6762, longitude: 139.6503)
+        SavedLocation.saveAll([paris, tokyo])
+        UserDefaults.standard.set(tokyo.id.uuidString, forKey: "WeatherOverlay.activeLocationId")
+        storeLegacyLocation(name: "Berlin", latitude: 52.52, longitude: 13.405)
+
+        let manager = WeatherManager(session: .mock)
+
+        XCTAssertEqual(manager.savedLocations, [paris, tokyo])
+        XCTAssertEqual(manager.activeLocation, tokyo)
+        XCTAssertEqual(SavedLocation.loadAll(), [paris, tokyo])
+        XCTAssertNil(UserDefaults.standard.object(forKey: legacyKey))
+    }
+
+    func testLegacyMigration_withSavedLocationsOnAutoStaysOnAuto() {
+        let paris = SavedLocation(id: UUID(), name: "Paris", latitude: 48.8566, longitude: 2.3522)
+        SavedLocation.saveAll([paris])
+        storeLegacyLocation(name: "Berlin", latitude: 52.52, longitude: 13.405)
+
+        let manager = WeatherManager(session: .mock)
+
+        XCTAssertEqual(manager.savedLocations, [paris])
+        XCTAssertNil(manager.activeLocationId)
+        XCTAssertNil(manager.activeLocation)
+        XCTAssertNil(UserDefaults.standard.object(forKey: legacyKey))
+    }
+
+    func testLegacyMigration_corruptDataIsIgnoredAndRemoved() {
+        UserDefaults.standard.set("not json".data(using: .utf8)!, forKey: legacyKey)
+
+        let manager = WeatherManager(session: .mock)
 
         XCTAssertTrue(manager.savedLocations.isEmpty)
+        XCTAssertNil(manager.activeLocationId)
+        XCTAssertNil(UserDefaults.standard.object(forKey: legacyKey))
+    }
+
+    func testLegacyMigration_incompleteOrWrongTypeDataIsIgnoredAndRemoved() {
+        UserDefaults.standard.set("{\"name\": \"Berlin\"}".data(using: .utf8)!, forKey: legacyKey)
+        XCTAssertTrue(WeatherManager(session: .mock).savedLocations.isEmpty)
+        XCTAssertNil(UserDefaults.standard.object(forKey: legacyKey))
+
+        UserDefaults.standard.set("Berlin", forKey: legacyKey)
+        XCTAssertTrue(WeatherManager(session: .mock).savedLocations.isEmpty)
+        XCTAssertNil(UserDefaults.standard.object(forKey: legacyKey))
+    }
+
+    func testLegacyMigration_loadingTwiceDoesNotDuplicate() {
+        URLProtocolMock.requestHandler = { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+        storeLegacyLocation(name: "Berlin", latitude: 52.52, longitude: 13.405)
+
+        manager = WeatherManager(session: .mock)
+        let migrated = manager.savedLocations
+        XCTAssertEqual(migrated.count, 1)
+
+        // start() loads the saved locations a second time.
+        manager.start()
+        XCTAssertEqual(manager.savedLocations, migrated)
+        XCTAssertEqual(manager.activeLocationId, migrated.first?.id)
+
+        let relaunched = WeatherManager(session: .mock)
+        XCTAssertEqual(relaunched.savedLocations, migrated)
+        XCTAssertEqual(relaunched.activeLocationId, migrated.first?.id)
+    }
+
+    func testLegacyMigration_removedCityDoesNotComeBack() throws {
+        URLProtocolMock.requestHandler = { _ in
+            throw URLError(.notConnectedToInternet)
+        }
+        storeLegacyLocation(name: "Berlin", latitude: 52.52, longitude: 13.405)
+
+        let manager = WeatherManager(session: .mock)
+        let migratedId = try XCTUnwrap(manager.activeLocationId)
+        manager.removeSavedLocation(id: migratedId)
+        XCTAssertTrue(manager.savedLocations.isEmpty)
+
+        let relaunched = WeatherManager(session: .mock)
+        XCTAssertTrue(relaunched.savedLocations.isEmpty)
+        XCTAssertNil(relaunched.activeLocationId)
     }
 
     func testFetchWeather_withAQI_failure_clearsStaleValue() async throws {

@@ -558,13 +558,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     guard let self = AppDelegate.shared else { return }
                     if let match = match {
-                        let saved = SavedLocation(
-                            id: UUID(),
-                            name: match.name,
-                            latitude: match.latitude,
-                            longitude: match.longitude
-                        )
-                        self.weatherManager.addSavedLocation(saved)
+                        self.weatherManager.addSavedLocation(match)
                         self.menuBarManager.syncLocationsSubmenu()
                         self.menuBarManager.updateStatusItem()
                     } else {

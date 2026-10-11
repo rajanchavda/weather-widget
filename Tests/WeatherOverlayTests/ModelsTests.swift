@@ -140,26 +140,6 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(response.results?.count, 0)
     }
 
-    func testManualLocation_codableRoundTrip() throws {
-        let location = ManualLocation(name: "Tokyo", latitude: 35.6762, longitude: 139.6503)
-
-        let data = try JSONEncoder().encode(location)
-        let decoded = try JSONDecoder().decode(ManualLocation.self, from: data)
-
-        XCTAssertEqual(decoded.name, "Tokyo")
-        XCTAssertEqual(decoded.latitude, 35.6762)
-        XCTAssertEqual(decoded.longitude, 139.6503)
-    }
-
-    func testManualLocation_equality() {
-        let a = ManualLocation(name: "Paris", latitude: 48.8566, longitude: 2.3522)
-        let b = ManualLocation(name: "Paris", latitude: 48.8566, longitude: 2.3522)
-        let c = ManualLocation(name: "London", latitude: 51.5074, longitude: -0.1278)
-
-        XCTAssertEqual(a, b)
-        XCTAssertNotEqual(a, c)
-    }
-
     // MARK: - SavedLocation
 
     func testSavedLocation_codableRoundTrip() throws {
@@ -206,27 +186,6 @@ final class ModelsTests: XCTestCase {
         SavedLocation.saveAll([])
         let loadedAfterClear = SavedLocation.loadAll()
         XCTAssertTrue(loadedAfterClear.isEmpty)
-
-        defaults.removeObject(forKey: key)
-    }
-
-    func testManualLocation_persistence() throws {
-        let key = "WeatherOverlay.manualLocation"
-        let defaults = UserDefaults.standard
-        defaults.removeObject(forKey: key)
-
-        let loadedBefore = ManualLocation.load()
-        XCTAssertNil(loadedBefore)
-
-        let location = ManualLocation(name: "Berlin", latitude: 52.5200, longitude: 13.4050)
-        ManualLocation.save(location)
-
-        let loadedAfter = ManualLocation.load()
-        XCTAssertEqual(loadedAfter, location)
-
-        ManualLocation.save(nil)
-        let loadedAfterClear = ManualLocation.load()
-        XCTAssertNil(loadedAfterClear)
 
         defaults.removeObject(forKey: key)
     }

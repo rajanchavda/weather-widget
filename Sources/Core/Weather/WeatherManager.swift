@@ -29,6 +29,8 @@ class WeatherManager: ObservableObject {
     @Published var activeLocationId: UUID? = nil
 
     private let activeIdKey = "WeatherOverlay.activeLocationId"
+    /// Single-city override from before multi-city support. Read once by the migration, then removed.
+    private let legacyManualLocationKey = "WeatherOverlay.manualLocation"
     private let hourlyWindowSize = 12
     /// How long the last good data is kept through failed refreshes before it is dropped.
     static let maxStaleAge: TimeInterval = 3 * 3600
@@ -58,9 +60,10 @@ class WeatherManager: ObservableObject {
     private let pathMonitor = NWPathMonitor()
     nonisolated(unsafe) private var lastPathStatus: NWPath.Status = .satisfied
 
-    var manualLocation: ManualLocation? {
-        get { ManualLocation.load() }
-        set { ManualLocation.save(newValue) }
+    /// The selected saved city, or nil when the location is automatic (IP-based).
+    var activeLocation: SavedLocation? {
+        guard let id = activeLocationId else { return nil }
+        return savedLocations.first { $0.id == id }
     }
 
     var currentPrecipitation: Double? {
@@ -181,17 +184,29 @@ class WeatherManager: ObservableObject {
             activeLocationId = id
         }
         migrateLegacyManualLocation()
-        if let activeId = activeLocationId,
-           savedLocations.contains(where: { $0.id == activeId }) {
-            syncManualLocationFromActiveId()
-        } else {
+        if activeLocation == nil {
             activeLocationId = nil
         }
     }
 
+    private struct LegacyManualLocation: Decodable {
+        let name: String
+        let latitude: Double
+        let longitude: Double
+    }
+
+    /// Carries the single city of a pre-multi-city install over as the active saved location.
     private func migrateLegacyManualLocation() {
-        guard savedLocations.isEmpty else { return }
-        guard let legacy = ManualLocation.load() else { return }
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: legacyManualLocationKey) != nil else { return }
+        // Removed whatever happens below, and only after the migrated city is saved, so the
+        // migration can never run twice or bring back a city the user has since removed.
+        defer { defaults.removeObject(forKey: legacyManualLocationKey) }
+
+        // With saved locations present the key is only the mirror later versions kept writing.
+        guard savedLocations.isEmpty,
+              let data = defaults.data(forKey: legacyManualLocationKey),
+              let legacy = try? JSONDecoder().decode(LegacyManualLocation.self, from: data) else { return }
         let saved = SavedLocation(
             id: UUID(),
             name: legacy.name,
@@ -213,33 +228,18 @@ class WeatherManager: ObservableObject {
         }
     }
 
-    private func syncManualLocationFromActiveId() {
-        guard let id = activeLocationId,
-              let location = savedLocations.first(where: { $0.id == id }) else {
-            manualLocation = nil
-            return
-        }
-        manualLocation = ManualLocation(
-            name: location.name,
-            latitude: location.latitude,
-            longitude: location.longitude
-        )
-    }
-
     func switchToLocation(id: UUID?) {
         guard let id = id, savedLocations.contains(where: { $0.id == id }) else {
             switchToAutoLocation()
             return
         }
         activeLocationId = id
-        syncManualLocationFromActiveId()
         saveSavedLocations()
         fetchWeather()
     }
 
     func switchToAutoLocation() {
         activeLocationId = nil
-        manualLocation = nil
         saveSavedLocations()
         fetchWeather()
     }
@@ -251,7 +251,6 @@ class WeatherManager: ObservableObject {
             abs($0.longitude - location.longitude) < 0.01 }) { return }
         savedLocations.append(location)
         activeLocationId = location.id
-        syncManualLocationFromActiveId()
         saveSavedLocations()
         fetchWeather()
     }
@@ -260,29 +259,9 @@ class WeatherManager: ObservableObject {
         savedLocations.removeAll { $0.id == id }
         if activeLocationId == id {
             activeLocationId = nil
-            manualLocation = nil
         }
         saveSavedLocations()
         fetchWeather()
-    }
-
-    func saveCurrentAsSavedLocation() {
-        let locName = cityName
-        let lat: Double
-        let lon: Double
-        if let manual = manualLocation {
-            lat = manual.latitude
-            lon = manual.longitude
-        } else {
-            return
-        }
-        let newLocation = SavedLocation(
-            id: UUID(),
-            name: locName,
-            latitude: lat,
-            longitude: lon
-        )
-        addSavedLocation(newLocation)
     }
 
     func fetchWeather() {
@@ -299,17 +278,17 @@ class WeatherManager: ObservableObject {
         print("[WeatherManager] Spawning background fetch task (gen=\(generation))...")
         Task {
             print("[WeatherManager] Background fetch task started.")
-            let manual = self.manualLocation
-            let sourceKey = manual.map { "manual:\($0.latitude),\($0.longitude)" } ?? "auto"
+            let saved = self.activeLocation
+            let sourceKey = saved.map { "manual:\($0.latitude),\($0.longitude)" } ?? "auto"
             do {
                 let lat: Double
                 let lon: Double
                 let city: String
-                if let manual {
-                    print("[WeatherManager] Using manual location: \(manual.name) (\(manual.latitude), \(manual.longitude))")
-                    lat = manual.latitude
-                    lon = manual.longitude
-                    city = manual.name
+                if let saved {
+                    print("[WeatherManager] Using saved location: \(saved.name) (\(saved.latitude), \(saved.longitude))")
+                    lat = saved.latitude
+                    lon = saved.longitude
+                    city = saved.name
                 } else {
                     let location = try await autoLocation(generation: generation)
                     lat = location.latitude
@@ -447,7 +426,7 @@ class WeatherManager: ObservableObject {
         }
     }
 
-    nonisolated func searchCity(_ query: String) async throws -> ManualLocation? {
+    nonisolated func searchCity(_ query: String) async throws -> SavedLocation? {
         guard var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search") else {
             throw URLError(.badURL)
         }
@@ -477,7 +456,7 @@ class WeatherManager: ObservableObject {
             }
             return first.name
         }()
-        return ManualLocation(name: displayName, latitude: first.latitude, longitude: first.longitude)
+        return SavedLocation(id: UUID(), name: displayName, latitude: first.latitude, longitude: first.longitude)
     }
 
     private func applyWeatherResponse(_ weather: WeatherResponse, cityName: String) {

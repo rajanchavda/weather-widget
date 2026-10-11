@@ -23,30 +23,6 @@ struct SavedLocation: Identifiable, Codable, Equatable {
     }
 }
 
-// MARK: - Manual Location Override
-
-struct ManualLocation: Codable, Equatable {
-    let name: String
-    let latitude: Double
-    let longitude: Double
-
-    private static let defaultsKey = "WeatherOverlay.manualLocation"
-
-    static func load() -> ManualLocation? {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey) else { return nil }
-        return try? JSONDecoder().decode(ManualLocation.self, from: data)
-    }
-
-    static func save(_ value: ManualLocation?) {
-        let defaults = UserDefaults.standard
-        if let value = value, let data = try? JSONEncoder().encode(value) {
-            defaults.set(data, forKey: defaultsKey)
-        } else {
-            defaults.removeObject(forKey: defaultsKey)
-        }
-    }
-}
-
 // MARK: - JSON Structures for Decoding
 
 struct GeoResponse: Codable {
