@@ -93,9 +93,7 @@ class UpdateManager {
         let bundlePath = Bundle.main.bundlePath
 
         button.title = "🌤️ Updating..."
-        if let menu = appDelegate.statusItem?.menu, menu.items.count > 1 {
-            menu.items[1].title = "Status: Downloading update via Homebrew..."
-        }
+        appDelegate.menuBarManager.showUpdateInProgress()
 
         showAlert(
             "Updating Weather Overlay",

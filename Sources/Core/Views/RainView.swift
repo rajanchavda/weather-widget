@@ -211,10 +211,3 @@ struct RainView: View {
         }
     }
 }
-
-struct RainDrop: Identifiable {
-    let id: Int
-    let x: CGFloat
-    let delay: Double
-    let speed: Double
-}
