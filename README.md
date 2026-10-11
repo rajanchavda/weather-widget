@@ -367,6 +367,52 @@ swift test --filter WeatherManagerTests
 
 Network mocking uses `URLProtocolMock` — intercepts all HTTP requests deterministically without modifying production code.
 
+## 🗺️ Roadmap
+
+Working list from the October 2026 repo review. Items are ordered by priority within each section.
+
+### Fixes
+
+- [x] **Persist settings** — back `OverlaySettings` with `UserDefaults` so unit, brightness, display mode, AQI and alert toggles survive relaunch
+- [x] **Make auto-update opt-in** — background check only notifies; `brew upgrade` runs on click
+  - [x] Skip the update check when running outside an `.app` bundle (`swift run`)
+  - [x] Drain the brew output pipe while the process runs so verbose output can't hang it
+- [x] **Run tests in CI** — add a PR workflow running `swift test`, and gate `release.yml` on it
+  - [x] Generate real release notes instead of the `[Add release notes here]` placeholder
+- [ ] **Fix alert spam** — notify on event onset instead of once per forecast hour
+  - [ ] Suppress alerts while showing fallback data
+  - [ ] Respect the selected temperature unit and include the city name
+- [ ] **Replace the London fallback** — keep the last good data and mark it stale on fetch failure
+  - [ ] Loosen the 5-second request timeout
+- [ ] **Cap animation frame rate** — `TimelineView(.animation(minimumInterval: 1/30))` for all effects
+  - [ ] Stop rebuilding overlay windows on every Space switch
+- [ ] **Debounce the change sink** — one status/menu/alert pass per fetch instead of one per `@Published` change
+- [ ] **Remove dead code** — `promptSetLocation`, `clearManualLocation`, `RainDrop`, `menu.items[1]` index hacks
+  - [ ] Collapse `ManualLocation` and `SavedLocation` into one source of truth
+  - [ ] Remove the stray `zap` path and placeholder username from the cask template in `build_app.sh`
+- [ ] **Refresh docs** — test counts, window behavior, drizzle animation and version in `README.md`, `CLAUDE.md`, `GEMINI.md`
+- [ ] **Cache the geo-IP result** instead of re-querying every 5 minutes
+- [ ] **Replace `print` with `os.Logger`**
+- [ ] **Notarize the build** instead of ad-hoc signing plus `xattr -cr`
+
+### Features
+
+- [ ] **Forecast popover** — hourly strip, 7-day view, feels-like, wind, UV, sunrise/sunset
+- [ ] **Precipitation-driven intensity** — scale rain and snow from mm/h and wind speed instead of WMO code buckets
+- [ ] **CoreLocation opt-in** for accurate location on VPNs
+- [ ] **City picker** — choose from the top five geocoding results
+- [ ] **Rain nowcast** — "rain in 12 min" using Open-Meteo `minutely_15`
+- [ ] **Settings window** to replace the nested menus
+
+### Future ideas
+
+- [ ] **Sky that follows the sun** — aurora colors from solar elevation, golden hour, dusk and real moon phase
+- [ ] **Wind as a first-class effect** — rain, snow and clouds drift at real wind speed and direction
+- [ ] **Rare-event Easter eggs** — meteor showers, real aurora on high Kp-index nights, rainbows after rain
+- [ ] **Themes and effect-layer plugin API**
+- [ ] **WidgetKit companion, Shortcuts and Focus integration**
+- [ ] **Sparkle updates** to drop the Homebrew dependency
+
 ## License
 
 MIT
