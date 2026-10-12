@@ -1,4 +1,5 @@
 import Cocoa
+import os
 
 @MainActor
 class UpdateManager {
@@ -28,7 +29,7 @@ class UpdateManager {
     /// A background check only flags the update in the menu; installing always needs a click.
     func performUpdateCheck(isUserInitiated: Bool) {
         guard isUserInitiated || isAppBundle else {
-            print("[Update] Not running from an app bundle. Skipping background update check.")
+            Log.update.notice("Not running from an app bundle. Skipping background update check.")
             return
         }
         guard let url = URL(string: "https://api.github.com/repos/rajanchavda/weather-widget/releases/latest") else {
@@ -93,9 +94,7 @@ class UpdateManager {
         let bundlePath = Bundle.main.bundlePath
 
         button.title = "🌤️ Updating..."
-        if let menu = appDelegate.statusItem?.menu, menu.items.count > 1 {
-            menu.items[1].title = "Status: Downloading update via Homebrew..."
-        }
+        appDelegate.menuBarManager.showUpdateInProgress()
 
         showAlert(
             "Updating Weather Overlay",
@@ -154,7 +153,7 @@ class UpdateManager {
                 } else if newVersion != oldVersion {
                     self.relaunchApp()
                 } else {
-                    print("[Update] brew exited 0 but version unchanged (\(oldVersion)). No update applied.")
+                    Log.update.error("brew exited 0 but version unchanged (\(oldVersion, privacy: .public)). No update applied.")
                     self.showAlert("Already Up to Date", "You are already running version \(oldVersion).")
                     self.appDelegate.weatherManager.fetchWeather()
                 }
@@ -185,7 +184,7 @@ class UpdateManager {
         do {
             try relaunchTask.run()
         } catch {
-            print("Failed to execute relaunch: \(error.localizedDescription)")
+            Log.update.error("Failed to execute relaunch: \(error.localizedDescription, privacy: .public)")
         }
 
         DispatchQueue.main.async {
