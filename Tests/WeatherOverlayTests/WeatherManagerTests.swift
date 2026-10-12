@@ -268,6 +268,10 @@ final class WeatherManagerTests: XCTestCase {
                 XCTFail("Should not call geo API when a saved location is active")
                 throw URLError(.badURL)
             }
+            // The air-quality request follows the forecast and can arrive before this test ends.
+            if urlString.contains("air-quality-api.open-meteo.com") {
+                throw URLError(.badServerResponse)
+            }
             if urlString.contains("open-meteo.com") {
                 XCTAssertTrue(urlString.contains("forecast_days=2"), "Should request 2 forecast days for a full forward window")
                 XCTAssertTrue(urlString.contains("48.8566"), "Should use Paris coordinates")
