@@ -7,7 +7,7 @@ class MenuBarManager {
     unowned let weatherManager: WeatherManager
     unowned let settings: OverlaySettings
 
-    private enum MenuTag: Int {
+    enum MenuTag: Int {
         case location = 1001
         case condition = 1002
         case locations = 1003
@@ -16,6 +16,13 @@ class MenuBarManager {
         case layout = 1006
         case unit = 1007
     }
+
+    static let staleTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
 
     init(appDelegate: AppDelegate, weatherManager: WeatherManager, settings: OverlaySettings) {
         self.appDelegate = appDelegate
@@ -273,7 +280,11 @@ class MenuBarManager {
                 displayedTemp = temp
             }
             title = buildStatusTitle(emoji: emoji, displayedTemp: displayedTemp)
-            locationTitle = "Location: \(city)"
+            if weatherManager.isStale, let updated = weatherManager.lastUpdated {
+                locationTitle = "Location: \(city) (last updated \(Self.staleTimeFormatter.string(from: updated)))"
+            } else {
+                locationTitle = "Location: \(city)"
+            }
         }
 
         let aqiSuffix: String
@@ -498,6 +509,12 @@ class MenuBarManager {
         guard let menu = appDelegate.statusItem?.menu,
               let item = findMenuItem(withAction: #selector(AppDelegate.checkForUpdates), in: menu) else { return }
         item.title = "Update Available (v\(version))..."
+    }
+
+    func showUpdateInProgress() {
+        guard let menu = appDelegate.statusItem?.menu,
+              let item = findMenuItem(withTag: MenuTag.condition.rawValue, in: menu) else { return }
+        item.title = "Status: Downloading update via Homebrew..."
     }
 
     // MARK: - Helpers

@@ -3,6 +3,7 @@ import SwiftUI
 import Combine
 import ServiceManagement
 import IOKit.ps
+import os
 
 @MainActor
 public class AppDelegate: NSObject, NSApplicationDelegate {
@@ -47,11 +48,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        print("[AppDelegate] applicationDidFinishLaunching started.")
+        Log.app.info("applicationDidFinishLaunching started.")
         NSApp.setActivationPolicy(.accessory)
         ProcessInfo.processInfo.disableAutomaticTermination("WeatherOverlayBackground")
 
-        print("[AppDelegate] Setting up status item and overlay windows...")
+        Log.app.info("Setting up status item and overlay windows...")
         menuBarManager.setup()
         setupOverlayWindows()
 
@@ -118,16 +119,11 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        print("[AppDelegate] Requesting notification authorization...")
+        Log.app.info("Requesting notification authorization...")
         notificationManager.requestAuthorization()
 
-        print("[AppDelegate] Subscribing to WeatherManager / settings change events...")
-        Publishers.Merge(
-            weatherManager.objectWillChange.map { _ in () },
-            settings.objectWillChange.map { _ in () }
-        )
-        .receive(on: RunLoop.main)
-        .sink { [weak self] in
+        Log.app.info("Subscribing to WeatherManager / settings change events...")
+        observeChanges { [weak self] in
             guard let self = self else { return }
             self.menuBarManager.updateStatusItem()
             self.menuBarManager.syncLocationsSubmenu()
@@ -135,7 +131,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         }
         .store(in: &cancellables)
 
-        print("[AppDelegate] Starting the Weather Engine...")
+        Log.app.info("Starting the Weather Engine...")
         weatherManager.start()
 
         setupPowerMonitoring()
@@ -143,7 +139,20 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         performUpdateCheck(isUserInitiated: false)
     }
 
-    private func setupOverlayWindows() {
+    /// A single fetch changes a dozen published properties in a row; wait for the burst
+    /// to settle so the status item, menu and alerts are refreshed once, not once each.
+    static let changeDebounce: RunLoop.SchedulerTimeType.Stride = .milliseconds(50)
+
+    func observeChanges(_ handler: @escaping () -> Void) -> AnyCancellable {
+        Publishers.Merge(
+            weatherManager.objectWillChange.map { _ in () },
+            settings.objectWillChange.map { _ in () }
+        )
+        .debounce(for: Self.changeDebounce, scheduler: RunLoop.main)
+        .sink(receiveValue: handler)
+    }
+
+    func setupOverlayWindows() {
         for window in overlayWindows {
             window.close()
         }
@@ -152,33 +161,65 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         for screen in NSScreen.screens {
             let frame = getMenuBarFrame(for: screen)
             guard frame.height > 1 else { continue }
-
-            let window = NSWindow(
-                contentRect: frame,
-                styleMask: [.borderless],
-                backing: .buffered,
-                defer: false
-            )
-
-            window.isReleasedWhenClosed = false
-            window.backgroundColor = .clear
-            window.isOpaque = false
-            window.hasShadow = false
-
-            window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue - 1)
-            window.ignoresMouseEvents = true
-            // Avoid `.canJoinAllSpaces` so the overlay does not float over other apps'
-            // fullscreen spaces (e.g. VLC). `.moveToActiveSpace` keeps it on normal desktops.
-            // Do not use `.stationary` — it can keep high-level windows visible across
-            // fullscreen Space transitions.
-            window.collectionBehavior = [.moveToActiveSpace, .ignoresCycle]
-
-            let hostingView = NSHostingView(rootView: OverlayView(weatherManager: weatherManager, settings: settings))
-            window.contentView = hostingView
-
-            window.makeKeyAndOrderFront(nil)
-            overlayWindows.append(window)
+            overlayWindows.append(makeOverlayWindow(frame: frame))
         }
+    }
+
+    private func makeOverlayWindow(frame: NSRect) -> NSWindow {
+        let window = NSWindow(
+            contentRect: frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = false
+
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue - 1)
+        window.ignoresMouseEvents = true
+        // Avoid `.canJoinAllSpaces` so the overlay does not float over other apps'
+        // fullscreen spaces (e.g. VLC). `.moveToActiveSpace` keeps it on normal desktops.
+        // Do not use `.stationary` — it can keep high-level windows visible across
+        // fullscreen Space transitions.
+        window.collectionBehavior = [.moveToActiveSpace, .ignoresCycle]
+
+        let hostingView = NSHostingView(rootView: OverlayView(weatherManager: weatherManager, settings: settings))
+        window.contentView = hostingView
+
+        window.makeKeyAndOrderFront(nil)
+        return window
+    }
+
+    /// Brings the existing overlay windows to the active Space, keeping their views and
+    /// running animations. A window is rebuilt only if it did not follow the switch.
+    /// Screens with no menu bar (fullscreen) lose their window.
+    func syncOverlayWindowsToActiveSpace() {
+        var remaining = overlayWindows
+        var synced: [NSWindow] = []
+
+        for screen in NSScreen.screens {
+            let frame = getMenuBarFrame(for: screen)
+            guard frame.height > 1 else { continue }
+
+            if let index = remaining.firstIndex(where: { $0.frame == frame }) {
+                let window = remaining.remove(at: index)
+                window.orderFrontRegardless()
+                if window.isOnActiveSpace {
+                    synced.append(window)
+                    continue
+                }
+                window.close()
+            }
+            synced.append(makeOverlayWindow(frame: frame))
+        }
+
+        for window in remaining {
+            window.close()
+        }
+        overlayWindows = synced
     }
 
     @objc private func delayedSetupOverlayWindows() {
@@ -196,49 +237,48 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func activeSpaceDidChange() {
         // `moveToActiveSpace` does not reliably relocate these click-through overlay
-        // windows on desktop switches, so rebuild for the active Space. Screens with
-        // no menu bar (fullscreen) are skipped inside setupOverlayWindows().
+        // windows on desktop switches by itself, so pull them over explicitly.
         // If geometry is mid-transition and nothing was created, retry after settle.
         guard !weatherManager.isPaused else { return }
-        setupOverlayWindows()
+        syncOverlayWindowsToActiveSpace()
         if overlayWindows.isEmpty {
             triggerWindowRecreation()
         }
     }
 
     @objc private func screenDidUnlock() {
-        print("[AppDelegate] Screen unlocked notification received. Refreshing weather...")
+        Log.app.info("Screen unlocked notification received. Refreshing weather...")
         weatherManager.fetchWeather()
         triggerWindowRecreation()
     }
 
     @objc private func systemDidWake() {
-        print("[AppDelegate] System did wake notification received.")
+        Log.app.info("System did wake notification received.")
         resumeAll()
     }
 
     @objc private func systemWillSleep() {
-        print("[AppDelegate] System will sleep.")
+        Log.app.info("System will sleep.")
         pauseAll()
     }
 
     @objc private func displayDidSleep() {
-        print("[AppDelegate] Display did sleep.")
+        Log.app.info("Display did sleep.")
         pauseAll()
     }
 
     @objc private func displayDidWake() {
-        print("[AppDelegate] Display did wake.")
+        Log.app.info("Display did wake.")
         resumeAll()
     }
 
     @objc private func sessionDidResignActive() {
-        print("[AppDelegate] Session did resign active.")
+        Log.app.info("Session did resign active.")
         pauseAll()
     }
 
     @objc private func sessionDidBecomeActive() {
-        print("[AppDelegate] Session did become active.")
+        Log.app.info("Session did become active.")
         resumeAll()
     }
 
@@ -261,16 +301,16 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         if service.status == .enabled {
             do {
                 try service.unregister()
-                print("[AppDelegate] Unregistered login item successfully.")
+                Log.app.notice("Unregistered login item successfully.")
             } catch {
-                print("[AppDelegate] Failed to unregister login item: \(error)")
+                Log.app.error("Failed to unregister login item: \(String(describing: error), privacy: .public)")
             }
         } else {
             do {
                 try service.register()
-                print("[AppDelegate] Registered login item successfully.")
+                Log.app.notice("Registered login item successfully.")
             } catch {
-                print("[AppDelegate] Failed to register login item: \(error)")
+                Log.app.error("Failed to register login item: \(String(describing: error), privacy: .public)")
                 showLoginItemErrorAlert(error)
             }
         }
@@ -331,7 +371,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
 
         if onBattery && percent <= 20 && !userDisabledEco {
             if !settings.ecoMode {
-                print("[AppDelegate] Battery \(percent)% — auto-enabling Eco Mode")
+                Log.app.notice("Battery \(percent, privacy: .public)% — auto-enabling Eco Mode")
                 enterEcoMode()
                 autoEnabledEco = true
                 menuBarManager.syncMenuStates()
@@ -475,7 +515,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func refreshWeather() {
-        weatherManager.fetchWeather()
+        weatherManager.forceRefresh()
     }
 
     // MARK: - Multi-Location Management
@@ -519,13 +559,7 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     guard let self = AppDelegate.shared else { return }
                     if let match = match {
-                        let saved = SavedLocation(
-                            id: UUID(),
-                            name: match.name,
-                            latitude: match.latitude,
-                            longitude: match.longitude
-                        )
-                        self.weatherManager.addSavedLocation(saved)
+                        self.weatherManager.addSavedLocation(match)
                         self.menuBarManager.syncLocationsSubmenu()
                         self.menuBarManager.updateStatusItem()
                     } else {
@@ -570,70 +604,6 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         weatherManager.removeSavedLocation(id: selected.id)
         menuBarManager.syncLocationsSubmenu()
         menuBarManager.updateStatusItem()
-    }
-
-    @objc func promptSetLocation() {
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.messageText = "Set Location"
-        alert.informativeText = "Enter a city name (e.g. \"Mumbai\", \"London\", \"New York\")."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Search")
-        alert.addButton(withTitle: "Cancel")
-
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        input.placeholderString = "City name"
-        if let current = weatherManager.manualLocation {
-            input.stringValue = current.name
-        }
-        alert.accessoryView = input
-        alert.window.initialFirstResponder = input
-
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return }
-
-        let query = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return }
-
-        print("[AppDelegate] Set Location requested for query: \(query)")
-        let manager = weatherManager
-        Task.detached {
-            do {
-                print("[AppDelegate] About to call searchCity...")
-                let match = try await manager.searchCity(query)
-                print("[AppDelegate] searchCity returned, dispatching to main...")
-                DispatchQueue.main.async {
-                    print("[AppDelegate] On main thread, processing result...")
-                    guard let self = AppDelegate.shared else {
-                        print("[AppDelegate] AppDelegate.shared is nil!")
-                        return
-                    }
-                    if let match = match {
-                        print("[AppDelegate] Geocoding match: \(match.name) (\(match.latitude), \(match.longitude))")
-                        manager.manualLocation = match
-                        if let menu = self.statusItem?.menu, menu.items.count > 1 {
-                            menu.items[1].title = "Location: \(match.name) (loading...)"
-                        }
-                        print("[AppDelegate] Calling fetchWeather() for new location...")
-                        manager.fetchWeather()
-                    } else {
-                        print("[AppDelegate] No geocoding match for: \(query)")
-                        self.showLocationAlert("No match", "No city found matching \"\(query)\". Try a different spelling.")
-                    }
-                }
-            } catch {
-                print("[AppDelegate] Geocoding failed: \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    AppDelegate.shared?.showLocationAlert("Search failed", error.localizedDescription)
-                }
-            }
-        }
-    }
-
-    @objc func clearManualLocation() {
-        weatherManager.manualLocation = nil
-        weatherManager.fetchWeather()
     }
 
     private func showLocationAlert(_ title: String, _ message: String) {

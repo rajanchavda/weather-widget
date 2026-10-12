@@ -216,34 +216,66 @@ final class MenuBarManagerTests: XCTestCase {
 
     // MARK: - Location Title
 
+    private func menuItem(_ tag: MenuBarManager.MenuTag) -> NSMenuItem? {
+        appDelegate.statusItem?.menu?.item(withTag: tag.rawValue)
+    }
+
+    func testLocationTitle_staleDataShowsLastUpdatedTime() {
+        let updated = Date(timeIntervalSince1970: 1_768_040_400)
+        weatherManager.isStale = true
+        weatherManager.lastUpdated = updated
+
+        menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
+
+        let expectedTime = MenuBarManager.staleTimeFormatter.string(from: updated)
+        XCTAssertEqual(menuItem(.location)?.title, "Location: Tokyo (last updated \(expectedTime))")
+        XCTAssertEqual(appDelegate.statusItem?.button?.title, "☀️ 20.0°C", "Stale data still shows the last known weather")
+    }
+
+    func testLocationTitle_freshDataHasNoStaleNote() {
+        weatherManager.isStale = false
+        weatherManager.lastUpdated = Date()
+
+        menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
+
+        XCTAssertEqual(menuItem(.location)?.title, "Location: Tokyo")
+    }
+
     func testLocationTitleUpdate() {
         menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
 
-        let locationTitle = appDelegate.statusItem?.menu?.items[0].title ?? ""
+        let locationTitle = menuItem(.location)?.title ?? ""
         XCTAssertEqual(locationTitle, "Location: Tokyo")
         
-        let conditionTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        let conditionTitle = menuItem(.condition)?.title ?? ""
         XCTAssertEqual(conditionTitle, "Condition: 20.0°C • Clear Sky")
     }
 
     func testLocationTitleErrorState() {
         menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: "Timeout")
 
-        let locationTitle = appDelegate.statusItem?.menu?.items[0].title ?? ""
+        let locationTitle = menuItem(.location)?.title ?? ""
         XCTAssertEqual(locationTitle, "Error: Timeout")
         
-        let conditionTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        let conditionTitle = menuItem(.condition)?.title ?? ""
         XCTAssertEqual(conditionTitle, "Condition: --")
     }
 
     func testLocationTitleNoData() {
         menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: nil)
 
-        let locationTitle = appDelegate.statusItem?.menu?.items[0].title ?? ""
+        let locationTitle = menuItem(.location)?.title ?? ""
         XCTAssertEqual(locationTitle, "Location: Detecting...")
         
-        let conditionTitle = appDelegate.statusItem?.menu?.items[1].title ?? ""
+        let conditionTitle = menuItem(.condition)?.title ?? ""
         XCTAssertEqual(conditionTitle, "Condition: --")
+    }
+
+    func testShowUpdateInProgress_setsConditionRowOnly() {
+        menuBarManager.showUpdateInProgress()
+
+        XCTAssertEqual(menuItem(.condition)?.title, "Status: Downloading update via Homebrew...")
+        XCTAssertEqual(menuItem(.location)?.title, "Location: Detecting...")
     }
 
     // MARK: - Temperature Rounding
@@ -757,11 +789,11 @@ class MockAppDelegate: AppDelegate {
         statusItem?.menu = NSMenu()
 
         let locationItem = NSMenuItem(title: "Location: Detecting...", action: nil, keyEquivalent: "")
-        locationItem.tag = 1001
+        locationItem.tag = MenuBarManager.MenuTag.location.rawValue
         statusItem?.menu?.addItem(locationItem)
 
         let conditionItem = NSMenuItem(title: "Condition: --", action: nil, keyEquivalent: "")
-        conditionItem.tag = 1002
+        conditionItem.tag = MenuBarManager.MenuTag.condition.rawValue
         statusItem?.menu?.addItem(conditionItem)
     }
 }

@@ -17,7 +17,7 @@ struct SunView: View {
                 render(at: freezeDate.timeIntervalSinceReferenceDate, context: &context, size: size)
             }
         } else {
-            TimelineView(.animation) { timeline in
+            TimelineView(.animation(minimumInterval: OverlayAnimation.frameInterval)) { timeline in
                 Canvas { context, size in
                     render(at: timeline.date.timeIntervalSinceReferenceDate, context: &context, size: size)
                 }

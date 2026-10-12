@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Network
+import os
 
 @MainActor
 class WeatherManager: ObservableObject {
@@ -17,6 +18,8 @@ class WeatherManager: ObservableObject {
     @Published var hasData: Bool = false
     @Published var errorMessage: String? = nil
     @Published var isPaused: Bool = false
+    /// True while the last refresh failed and the previous good data is still being shown.
+    @Published var isStale: Bool = false
     @Published var aqiValue: Double? = nil
     @Published var aqiLabel: String = ""
 
@@ -27,16 +30,41 @@ class WeatherManager: ObservableObject {
     @Published var activeLocationId: UUID? = nil
 
     private let activeIdKey = "WeatherOverlay.activeLocationId"
+    /// Single-city override from before multi-city support. Read once by the migration, then removed.
+    private let legacyManualLocationKey = "WeatherOverlay.manualLocation"
     private let hourlyWindowSize = 12
+    /// How long the last good data is kept through failed refreshes before it is dropped.
+    static let maxStaleAge: TimeInterval = 3 * 3600
+    /// Identifies the location the current data was fetched for.
+    private var dataSourceKey: String?
+
+    /// How long a geo-IP result is reused before it is looked up again.
+    static let geoLocationCacheLifetime: TimeInterval = 3600
+    /// Clock for the geo-IP cache, replaceable so tests can age an entry without sleeping.
+    var now: () -> Date = { Date() }
+
+    private struct CachedGeoLocation {
+        let location: GeoResponse
+        let fetchedAt: Date
+        /// Set when the network may have changed: look up again, but keep this as a fallback.
+        var needsRevalidation: Bool
+    }
+    /// Last successful geo-IP result. In memory only, so a relaunch always looks up afresh.
+    private var cachedGeoLocation: CachedGeoLocation?
+    /// Bumped on every invalidation, so a lookup that was already in flight is not stored as fresh.
+    private var geoCacheEpoch: Int = 0
+    /// The path monitor reports the current path once when it starts; that is not a change.
+    private var hasReceivedInitialNetworkPath = false
 
     private var timer: AnyCancellable?
     private var fetchGeneration: Int = 0
     private let pathMonitor = NWPathMonitor()
     nonisolated(unsafe) private var lastPathStatus: NWPath.Status = .satisfied
 
-    var manualLocation: ManualLocation? {
-        get { ManualLocation.load() }
-        set { ManualLocation.save(newValue) }
+    /// The selected saved city, or nil when the location is automatic (IP-based).
+    var activeLocation: SavedLocation? {
+        guard let id = activeLocationId else { return nil }
+        return savedLocations.first { $0.id == id }
     }
 
     var currentPrecipitation: Double? {
@@ -50,8 +78,8 @@ class WeatherManager: ObservableObject {
     init(session: URLSession? = nil) {
         self.session = session ?? {
             let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 5.0
-            config.timeoutIntervalForResource = 5.0
+            config.timeoutIntervalForRequest = 15.0
+            config.timeoutIntervalForResource = 30.0
             return URLSession(configuration: config)
         }()
         loadSavedLocations()
@@ -78,7 +106,7 @@ class WeatherManager: ObservableObject {
     func pause() {
         guard !isPaused else { return }
         isPaused = true
-        print("[WeatherManager] Paused — cancelling timer.")
+        Log.weather.info("Paused — cancelling timer.")
         timer?.cancel()
         timer = nil
     }
@@ -86,9 +114,38 @@ class WeatherManager: ObservableObject {
     func resume() {
         guard isPaused else { return }
         isPaused = false
-        print("[WeatherManager] Resumed — restarting timer and refreshing.")
+        Log.weather.info("Resumed — restarting timer and refreshing.")
+        // The machine may have moved while it was asleep or locked.
+        invalidateGeoLocationCache()
         fetchWeather()
         startTimer()
+    }
+
+    /// Refreshes at the user's explicit request, looking the location up again instead of
+    /// trusting the cached geo-IP result.
+    func forceRefresh() {
+        invalidateGeoLocationCache()
+        fetchWeather()
+    }
+
+    /// Makes the next auto-location refresh look the location up again. The held result is
+    /// kept, marked for revalidation, so it can still stand in if that lookup fails.
+    /// Does not start a fetch.
+    func invalidateGeoLocationCache() {
+        geoCacheEpoch &+= 1
+        cachedGeoLocation?.needsRevalidation = true
+    }
+
+    /// Any path update after the monitor's initial report can mean a new public IP (VPN
+    /// toggle, Wi-Fi change) even while the path stays satisfied.
+    func networkPathDidUpdate(connectionRestored: Bool) {
+        if hasReceivedInitialNetworkPath {
+            invalidateGeoLocationCache()
+        }
+        hasReceivedInitialNetworkPath = true
+        if connectionRestored {
+            fetchWeather()
+        }
     }
 
     private func startTimer() {
@@ -105,12 +162,15 @@ class WeatherManager: ObservableObject {
             let status = path.status
             let previous = self.lastPathStatus
             self.lastPathStatus = status
-            print("[WeatherManager] Network path status updated: \(status). Previous status: \(previous)")
-            if status == .satisfied && previous != .satisfied {
-                print("[WeatherManager] Network connection restored. Triggering instant fetch...")
-                Task { @MainActor [weak self] in
-                    self?.fetchWeather()
-                }
+            Log.weather.info("Network path status updated: \(String(describing: status), privacy: .public). Previous status: \(String(describing: previous), privacy: .public)")
+            let restored = status == .satisfied && previous != .satisfied
+            if restored {
+                Log.weather.notice("Network connection restored. Triggering instant fetch...")
+            }
+            // This handler runs off the main thread and the geo-IP cache is main-actor state,
+            // so hop there. One task keeps the invalidation ahead of the reconnect fetch.
+            Task { @MainActor [weak self] in
+                self?.networkPathDidUpdate(connectionRestored: restored)
             }
         }
         pathMonitor.start(queue: DispatchQueue.global(qos: .background))
@@ -125,17 +185,29 @@ class WeatherManager: ObservableObject {
             activeLocationId = id
         }
         migrateLegacyManualLocation()
-        if let activeId = activeLocationId,
-           savedLocations.contains(where: { $0.id == activeId }) {
-            syncManualLocationFromActiveId()
-        } else {
+        if activeLocation == nil {
             activeLocationId = nil
         }
     }
 
+    private struct LegacyManualLocation: Decodable {
+        let name: String
+        let latitude: Double
+        let longitude: Double
+    }
+
+    /// Carries the single city of a pre-multi-city install over as the active saved location.
     private func migrateLegacyManualLocation() {
-        guard savedLocations.isEmpty else { return }
-        guard let legacy = ManualLocation.load() else { return }
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: legacyManualLocationKey) != nil else { return }
+        // Removed whatever happens below, and only after the migrated city is saved, so the
+        // migration can never run twice or bring back a city the user has since removed.
+        defer { defaults.removeObject(forKey: legacyManualLocationKey) }
+
+        // With saved locations present the key is only the mirror later versions kept writing.
+        guard savedLocations.isEmpty,
+              let data = defaults.data(forKey: legacyManualLocationKey),
+              let legacy = try? JSONDecoder().decode(LegacyManualLocation.self, from: data) else { return }
         let saved = SavedLocation(
             id: UUID(),
             name: legacy.name,
@@ -145,7 +217,7 @@ class WeatherManager: ObservableObject {
         savedLocations = [saved]
         activeLocationId = saved.id
         saveSavedLocations()
-        print("[WeatherManager] Migrated legacy manual location: \(legacy.name)")
+        Log.weather.notice("Migrated legacy manual location: \(legacy.name, privacy: .public)")
     }
 
     private func saveSavedLocations() {
@@ -157,33 +229,18 @@ class WeatherManager: ObservableObject {
         }
     }
 
-    private func syncManualLocationFromActiveId() {
-        guard let id = activeLocationId,
-              let location = savedLocations.first(where: { $0.id == id }) else {
-            manualLocation = nil
-            return
-        }
-        manualLocation = ManualLocation(
-            name: location.name,
-            latitude: location.latitude,
-            longitude: location.longitude
-        )
-    }
-
     func switchToLocation(id: UUID?) {
         guard let id = id, savedLocations.contains(where: { $0.id == id }) else {
             switchToAutoLocation()
             return
         }
         activeLocationId = id
-        syncManualLocationFromActiveId()
         saveSavedLocations()
         fetchWeather()
     }
 
     func switchToAutoLocation() {
         activeLocationId = nil
-        manualLocation = nil
         saveSavedLocations()
         fetchWeather()
     }
@@ -195,7 +252,6 @@ class WeatherManager: ObservableObject {
             abs($0.longitude - location.longitude) < 0.01 }) { return }
         savedLocations.append(location)
         activeLocationId = location.id
-        syncManualLocationFromActiveId()
         saveSavedLocations()
         fetchWeather()
     }
@@ -204,80 +260,61 @@ class WeatherManager: ObservableObject {
         savedLocations.removeAll { $0.id == id }
         if activeLocationId == id {
             activeLocationId = nil
-            manualLocation = nil
         }
         saveSavedLocations()
         fetchWeather()
     }
 
-    func saveCurrentAsSavedLocation() {
-        let locName = cityName
-        let lat: Double
-        let lon: Double
-        if let manual = manualLocation {
-            lat = manual.latitude
-            lon = manual.longitude
-        } else {
-            return
-        }
-        let newLocation = SavedLocation(
-            id: UUID(),
-            name: locName,
-            latitude: lat,
-            longitude: lon
-        )
-        addSavedLocation(newLocation)
-    }
-
     func fetchWeather() {
         if isPaused {
-            print("[WeatherManager] fetchWeather() skipped — paused.")
+            Log.weather.debug("fetchWeather() skipped — paused.")
             return
         }
-        print("[WeatherManager] fetchWeather() invoked. isFetching=\(isFetching)")
+        Log.weather.debug("fetchWeather() invoked. isFetching=\(self.isFetching, privacy: .public)")
         fetchGeneration &+= 1
         let generation = fetchGeneration
         isFetching = true
         errorMessage = nil
 
-        print("[WeatherManager] Spawning background fetch task (gen=\(generation))...")
+        Log.weather.debug("Spawning background fetch task (gen=\(generation, privacy: .public))...")
         Task {
-            print("[WeatherManager] Background fetch task started.")
+            let saved = self.activeLocation
+            let sourceKey = saved.map { "manual:\($0.latitude),\($0.longitude)" } ?? "auto"
             do {
                 let lat: Double
                 let lon: Double
                 let city: String
-                if let manual = self.manualLocation {
-                    print("[WeatherManager] Using manual location: \(manual.name) (\(manual.latitude), \(manual.longitude))")
-                    lat = manual.latitude
-                    lon = manual.longitude
-                    city = manual.name
+                if let saved {
+                    Log.weather.info("Using saved location: \(saved.name, privacy: .public) (\(saved.latitude, privacy: .private), \(saved.longitude, privacy: .private))")
+                    lat = saved.latitude
+                    lon = saved.longitude
+                    city = saved.name
                 } else {
-                    print("[WeatherManager] Fetching coordinates from IP geolocator...")
-                    let location = try await fetchLocation()
+                    let location = try await autoLocation(generation: generation)
                     lat = location.latitude
                     lon = location.longitude
                     city = location.city ?? "My Location"
-                    print("[WeatherManager] Geolocation success: \(city) (\(lat), \(lon))")
+                    Log.weather.info("Geolocation success: \(city, privacy: .public) (\(lat, privacy: .private), \(lon, privacy: .private))")
                 }
 
-                print("[WeatherManager] Fetching weather forecast data...")
+                Log.weather.debug("Fetching weather forecast data...")
                 let weather = try await fetchWeatherData(lat: lat, lon: lon)
-                print("[WeatherManager] Weather data fetched. Temp=\(weather.current.temperature_2m)°C, WMO Code=\(weather.current.weather_code)")
+                Log.weather.info("Weather data fetched. Temp=\(weather.current.temperature_2m, format: .fixed(precision: 1), privacy: .public)°C, WMO Code=\(weather.current.weather_code, privacy: .public)")
 
                 guard generation == self.fetchGeneration else {
-                    print("[WeatherManager] Discarding stale success result (gen=\(generation), current=\(self.fetchGeneration))")
+                    Log.weather.debug("Discarding stale success result (gen=\(generation, privacy: .public), current=\(self.fetchGeneration, privacy: .public))")
                     return
                 }
-                self.applyWeatherResponse(weather, cityName: city, useLocalNightFallback: false)
+                self.applyWeatherResponse(weather, cityName: city)
+                self.dataSourceKey = sourceKey
                 self.isFetching = false
-                print("[WeatherManager] fetchWeather() completed successfully.")
+                Log.weather.debug("fetchWeather() completed successfully.")
 
                 do {
-                    print("[WeatherManager] Fetching air quality data...")
+                    Log.weather.debug("Fetching air quality data...")
                     let aqi = try await fetchAirQuality(lat: lat, lon: lon)
                     guard generation == self.fetchGeneration else {
-                        print("[WeatherManager] Discarding stale AQI result (gen=\(generation), current=\(self.fetchGeneration))")
+                        Log.weather.debug("Discarding stale AQI result (gen=\(generation, privacy: .public), current=\(self.fetchGeneration, privacy: .public))")
                         return
                     }
                     if let value = aqi.current.europeanAqi {
@@ -287,68 +324,83 @@ class WeatherManager: ObservableObject {
                         self.aqiValue = nil
                         self.aqiLabel = ""
                     }
-                    print("[WeatherManager] Air quality fetched: AQI=\(self.aqiValue ?? -1) \(self.aqiLabel)")
+                    Log.weather.info("Air quality fetched: AQI=\(self.aqiValue ?? -1, format: .fixed(precision: 0), privacy: .public) \(self.aqiLabel, privacy: .public)")
                 } catch {
-                    print("[WeatherManager] AQI fetch failed (non-fatal): \(error.localizedDescription)")
+                    Log.weather.error("AQI fetch failed (non-fatal): \(error.localizedDescription, privacy: .public)")
                     guard generation == self.fetchGeneration else {
-                        print("[WeatherManager] Discarding stale AQI error (gen=\(generation), current=\(self.fetchGeneration))")
+                        Log.weather.debug("Discarding stale AQI error (gen=\(generation, privacy: .public), current=\(self.fetchGeneration, privacy: .public))")
                         return
                     }
                     self.aqiValue = nil
                     self.aqiLabel = ""
                 }
             } catch {
-                print("[WeatherManager] Primary fetch error: \(error.localizedDescription)")
-                let primaryErrStr = error.localizedDescription
-
-                do {
-                    print("[WeatherManager] Initiating fallback fetch (London: 51.5074, -0.1278)...")
-                    let weather = try await fetchWeatherData(lat: 51.5074, lon: -0.1278)
-
-                    guard generation == self.fetchGeneration else {
-                        print("[WeatherManager] Discarding stale fallback result (gen=\(generation), current=\(self.fetchGeneration))")
-                        return
-                    }
-                    self.applyWeatherResponse(weather, cityName: "London (Fallback)", useLocalNightFallback: true)
-                    self.errorMessage = nil
-                    self.isFetching = false
-                    print("[WeatherManager] Fallback completed.")
-
-                    do {
-                        print("[WeatherManager] Fetching air quality data (fallback)...")
-                        let aqi = try await fetchAirQuality(lat: 51.5074, lon: -0.1278)
-                        guard generation == self.fetchGeneration else {
-                            print("[WeatherManager] Discarding stale AQI result (gen=\(generation), current=\(self.fetchGeneration))")
-                            return
-                        }
-                        if let value = aqi.current.europeanAqi {
-                            self.aqiValue = value
-                            self.aqiLabel = AQICategory.from(europeanAqi: value).label
-                        } else {
-                            self.aqiValue = nil
-                            self.aqiLabel = ""
-                        }
-                        print("[WeatherManager] Air quality fetched (fallback): AQI=\(self.aqiValue ?? -1) \(self.aqiLabel)")
-                    } catch {
-                        print("[WeatherManager] AQI fetch failed (fallback, non-fatal): \(error.localizedDescription)")
-                        guard generation == self.fetchGeneration else {
-                            print("[WeatherManager] Discarding stale AQI error (gen=\(generation), current=\(self.fetchGeneration))")
-                            return
-                        }
-                        self.aqiValue = nil
-                        self.aqiLabel = ""
-                    }
-                } catch {
-                    print("[WeatherManager] Fallback weather fetch also failed: \(error.localizedDescription)")
-                    guard generation == self.fetchGeneration else {
-                        print("[WeatherManager] Discarding stale error (gen=\(generation), current=\(self.fetchGeneration))")
-                        return
-                    }
-                    self.isNight = computeIsNightLocally()
-                    self.errorMessage = "Fetch Failed: \(primaryErrStr) (Fallback failed: \(error.localizedDescription))"
-                    self.isFetching = false
+                Log.weather.error("Fetch error: \(error.localizedDescription, privacy: .public)")
+                guard generation == self.fetchGeneration else {
+                    Log.weather.debug("Discarding stale error (gen=\(generation, privacy: .public), current=\(self.fetchGeneration, privacy: .public))")
+                    return
                 }
+                self.handleFetchFailure(error, sourceKey: sourceKey)
             }
+        }
+    }
+
+    /// Keeps the last good data on screen, marked stale, when it is recent and for the
+    /// same location. Otherwise there is nothing truthful to show, so report the error.
+    private func handleFetchFailure(_ error: Error, sourceKey: String) {
+        let isRecent = lastUpdated.map { Date().timeIntervalSince($0) < Self.maxStaleAge } ?? false
+        if hasData && dataSourceKey == sourceKey && isRecent {
+            Log.weather.notice("Keeping last good data as stale.")
+            isStale = true
+        } else {
+            hasData = false
+            isStale = false
+            dataSourceKey = nil
+            hourlyTemps = []
+            hourlyCodes = []
+            hourlyTimes = []
+            hourlyPrecipitation = []
+            currentHourIndex = -1
+            aqiValue = nil
+            aqiLabel = ""
+            isNight = computeIsNightLocally()
+            errorMessage = "Fetch Failed: \(error.localizedDescription)"
+        }
+        isFetching = false
+    }
+
+    /// Location for an auto (IP-based) refresh: the cached geo-IP result while it is fresh,
+    /// otherwise a new lookup. If the lookup fails, the last held result is used rather
+    /// than failing the refresh, even when it is expired or marked for revalidation.
+    private func autoLocation(generation: Int) async throws -> GeoResponse {
+        if let cached = cachedGeoLocation, !cached.needsRevalidation {
+            let age = now().timeIntervalSince(cached.fetchedAt)
+            if age >= 0 && age < Self.geoLocationCacheLifetime {
+                Log.weather.debug("Using cached geo-IP location (age=\(Int(age), privacy: .public)s).")
+                return cached.location
+            }
+        }
+
+        Log.weather.debug("Fetching coordinates from IP geolocator...")
+        let epoch = geoCacheEpoch
+        do {
+            let location = try await fetchLocation()
+            // A superseded fetch never writes the cache, so an older lookup cannot replace
+            // the result of a newer one. If the cache was invalidated while this lookup was
+            // in flight, the answer may describe the old network: use it for this refresh
+            // but leave it marked so the next one looks up again.
+            if generation == fetchGeneration {
+                cachedGeoLocation = CachedGeoLocation(
+                    location: location,
+                    fetchedAt: now(),
+                    needsRevalidation: epoch != geoCacheEpoch
+                )
+            }
+            return location
+        } catch {
+            guard let held = cachedGeoLocation else { throw error }
+            Log.weather.error("Geo-IP lookup failed: \(error.localizedDescription, privacy: .public). Using last known location.")
+            return held.location
         }
     }
 
@@ -361,7 +413,7 @@ class WeatherManager: ObservableObject {
             let freeGeo = try JSONDecoder().decode(FreeGeoResponse.self, from: data)
             return GeoResponse(latitude: freeGeo.latitude, longitude: freeGeo.longitude, city: freeGeo.cityName)
         } catch {
-            print("Primary geolocator failed: \(error.localizedDescription). Trying secondary...")
+            Log.weather.error("Primary geolocator failed: \(error.localizedDescription, privacy: .public). Trying secondary...")
 
             guard let url = URL(string: "https://ipapi.co/json/") else {
                 throw URLError(.badURL)
@@ -374,7 +426,7 @@ class WeatherManager: ObservableObject {
         }
     }
 
-    nonisolated func searchCity(_ query: String) async throws -> ManualLocation? {
+    nonisolated func searchCity(_ query: String) async throws -> SavedLocation? {
         guard var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search") else {
             throw URLError(.badURL)
         }
@@ -385,14 +437,14 @@ class WeatherManager: ObservableObject {
             URLQueryItem(name: "format", value: "json"),
         ]
         guard let url = components.url else { throw URLError(.badURL) }
-        print("[WeatherManager] searchCity GET \(url.absoluteString)")
+        Log.weather.debug("searchCity GET \(url.absoluteString, privacy: .private)")
 
         let (data, response) = try await session.data(from: url)
         if let http = response as? HTTPURLResponse {
-            print("[WeatherManager] searchCity HTTP \(http.statusCode), bytes=\(data.count)")
+            Log.weather.debug("searchCity HTTP \(http.statusCode, privacy: .public), bytes=\(data.count, privacy: .public)")
         }
         let resp = try JSONDecoder().decode(GeocodingResponse.self, from: data)
-        print("[WeatherManager] searchCity decoded results count=\(resp.results?.count ?? 0)")
+        Log.weather.debug("searchCity decoded results count=\(resp.results?.count ?? 0, privacy: .public)")
         guard let first = resp.results?.first else { return nil }
 
         let displayName: String = {
@@ -404,10 +456,10 @@ class WeatherManager: ObservableObject {
             }
             return first.name
         }()
-        return ManualLocation(name: displayName, latitude: first.latitude, longitude: first.longitude)
+        return SavedLocation(id: UUID(), name: displayName, latitude: first.latitude, longitude: first.longitude)
     }
 
-    private func applyWeatherResponse(_ weather: WeatherResponse, cityName: String, useLocalNightFallback: Bool) {
+    private func applyWeatherResponse(_ weather: WeatherResponse, cityName: String) {
         let offset = weather.utc_offset_seconds
         self.forecastUtcOffsetSeconds = offset
         let window = sliceHourlyWindow(from: weather, utcOffsetSeconds: offset)
@@ -421,12 +473,9 @@ class WeatherManager: ObservableObject {
         // Window is already aligned to "now", so current hour is index 0 when data exists.
         self.currentHourIndex = window.times.isEmpty ? -1 : 0
         self.cityName = cityName
-        if useLocalNightFallback {
-            self.isNight = computeIsNightLocally(utcOffsetSeconds: offset)
-        } else {
-            self.isNight = weather.current.is_day == 0
-        }
+        self.isNight = weather.current.is_day == 0
         self.lastUpdated = Date()
+        self.isStale = false
         self.hasData = true
     }
 

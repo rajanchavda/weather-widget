@@ -20,7 +20,7 @@ struct FogView: View {
             }
             .blur(radius: 6.0)
         } else {
-            TimelineView(.animation) { timeline in
+            TimelineView(.animation(minimumInterval: OverlayAnimation.frameInterval)) { timeline in
                 Canvas { context, size in
                     render(at: timeline.date.timeIntervalSinceReferenceDate, context: &context, size: size)
                 }
