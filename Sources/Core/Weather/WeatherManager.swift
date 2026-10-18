@@ -40,6 +40,8 @@ class WeatherManager: ObservableObject {
 
     /// How long a geo-IP result is reused before it is looked up again.
     static let geoLocationCacheLifetime: TimeInterval = 3600
+    /// How many geocoding matches the Add Location picker offers.
+    nonisolated static let citySearchLimit = 5
     /// Clock for the geo-IP cache, replaceable so tests can age an entry without sleeping.
     var now: () -> Date = { Date() }
 
@@ -426,37 +428,34 @@ class WeatherManager: ObservableObject {
         }
     }
 
-    nonisolated func searchCity(_ query: String) async throws -> SavedLocation? {
+    nonisolated func searchCities(_ query: String) async throws -> [CityMatch] {
         guard var components = URLComponents(string: "https://geocoding-api.open-meteo.com/v1/search") else {
             throw URLError(.badURL)
         }
         components.queryItems = [
             URLQueryItem(name: "name", value: query),
-            URLQueryItem(name: "count", value: "1"),
+            URLQueryItem(name: "count", value: String(Self.citySearchLimit)),
             URLQueryItem(name: "language", value: "en"),
             URLQueryItem(name: "format", value: "json"),
         ]
         guard let url = components.url else { throw URLError(.badURL) }
-        Log.weather.debug("searchCity GET \(url.absoluteString, privacy: .private)")
+        Log.weather.debug("searchCities GET \(url.absoluteString, privacy: .private)")
 
         let (data, response) = try await session.data(from: url)
         if let http = response as? HTTPURLResponse {
-            Log.weather.debug("searchCity HTTP \(http.statusCode, privacy: .public), bytes=\(data.count, privacy: .public)")
+            Log.weather.debug("searchCities HTTP \(http.statusCode, privacy: .public), bytes=\(data.count, privacy: .public)")
         }
         let resp = try JSONDecoder().decode(GeocodingResponse.self, from: data)
-        Log.weather.debug("searchCity decoded results count=\(resp.results?.count ?? 0, privacy: .public)")
-        guard let first = resp.results?.first else { return nil }
+        Log.weather.debug("searchCities decoded results count=\(resp.results?.count ?? 0, privacy: .public)")
 
-        let displayName: String = {
-            if let admin = first.admin1, !admin.isEmpty, admin != first.name {
-                return "\(first.name), \(admin)"
-            }
-            if let country = first.country, !country.isEmpty {
-                return "\(first.name), \(country)"
-            }
-            return first.name
-        }()
-        return SavedLocation(id: UUID(), name: displayName, latitude: first.latitude, longitude: first.longitude)
+        return (resp.results ?? []).prefix(Self.citySearchLimit).map { result in
+            let admin = result.admin1.flatMap { $0.isEmpty || $0 == result.name ? nil : $0 }
+            let country = result.country.flatMap { $0.isEmpty ? nil : $0 }
+            let name = [result.name, admin ?? country].compactMap { $0 }.joined(separator: ", ")
+            let pickerTitle = [result.name, admin, country].compactMap { $0 }.joined(separator: ", ")
+            let location = SavedLocation(id: UUID(), name: name, latitude: result.latitude, longitude: result.longitude)
+            return CityMatch(location: location, pickerTitle: pickerTitle)
+        }
     }
 
     private func applyWeatherResponse(_ weather: WeatherResponse, cityName: String) {

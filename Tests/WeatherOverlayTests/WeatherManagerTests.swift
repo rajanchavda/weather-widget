@@ -308,7 +308,7 @@ final class WeatherManagerTests: XCTestCase {
 
     // MARK: - Search City
 
-    func testSearchCity_success() async throws {
+    func testSearchCities_success() async throws {
         let geocodingData = geocodingJSON()
 
         URLProtocolMock.requestHandler = { request in
@@ -318,20 +318,82 @@ final class WeatherManagerTests: XCTestCase {
         }
 
         let manager = WeatherManager(session: .mock)
-        let result = try await manager.searchCity("Mumbai")
+        let matches = try await manager.searchCities("Mumbai")
 
-        XCTAssertNotNil(result)
-        XCTAssertEqual(result?.name, "Mumbai, Maharashtra")
-        XCTAssertEqual(result?.latitude, 19.0760)
-        XCTAssertEqual(result?.longitude, 72.8777)
+        XCTAssertEqual(matches.count, 1)
+        XCTAssertEqual(matches.first?.location.name, "Mumbai, Maharashtra")
+        XCTAssertEqual(matches.first?.pickerTitle, "Mumbai, Maharashtra, India")
+        XCTAssertEqual(matches.first?.location.latitude, 19.0760)
+        XCTAssertEqual(matches.first?.location.longitude, 72.8777)
 
-        let again = try await manager.searchCity("Mumbai")
-        XCTAssertNotNil(again)
-        XCTAssertNotEqual(again?.id, result?.id, "Every search result gets its own id")
+        let again = try await manager.searchCities("Mumbai")
+        XCTAssertNotEqual(again.first?.location.id, matches.first?.location.id, "Every search result gets its own id")
         XCTAssertTrue(manager.savedLocations.isEmpty, "Searching does not save anything")
     }
 
-    func testSearchCity_noResults() async throws {
+    func testSearchCities_requestsTopFive() async throws {
+        let requested = expectation(description: "geocoding request")
+        URLProtocolMock.requestHandler = { request in
+            let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertEqual(items.first { $0.name == "count" }?.value, "5")
+            XCTAssertEqual(items.first { $0.name == "name" }?.value, "Paris")
+            requested.fulfill()
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(#"{"results": []}"#.utf8))
+        }
+
+        let manager = WeatherManager(session: .mock)
+        _ = try await manager.searchCities("Paris")
+
+        await fulfillment(of: [requested], timeout: 1.0)
+    }
+
+    func testSearchCities_multipleMatchesKeepOrderAndCap() async throws {
+        let json = """
+        {"results": [
+            {"name": "Springfield", "latitude": 39.80, "longitude": -89.64, "country": "United States", "admin1": "Illinois"},
+            {"name": "Springfield", "latitude": 37.21, "longitude": -93.29, "country": "United States", "admin1": "Missouri"},
+            {"name": "Springfield", "latitude": 42.10, "longitude": -72.59, "country": "United States", "admin1": "Massachusetts"},
+            {"name": "Springfield", "latitude": 39.92, "longitude": -83.81, "country": "United States", "admin1": "Ohio"},
+            {"name": "Springfield", "latitude": 44.05, "longitude": -123.02, "country": "United States", "admin1": "Oregon"},
+            {"name": "Springfield", "latitude": -27.68, "longitude": 152.90, "country": "Australia", "admin1": "Queensland"}
+        ]}
+        """.data(using: .utf8)!
+        URLProtocolMock.requestHandler = { request in
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
+        }
+
+        let manager = WeatherManager(session: .mock)
+        let matches = try await manager.searchCities("Springfield")
+
+        XCTAssertEqual(matches.count, WeatherManager.citySearchLimit)
+        XCTAssertEqual(matches.map(\.location.name), [
+            "Springfield, Illinois", "Springfield, Missouri", "Springfield, Massachusetts",
+            "Springfield, Ohio", "Springfield, Oregon",
+        ])
+        XCTAssertEqual(matches[1].location.latitude, 37.21)
+        XCTAssertEqual(Set(matches.map(\.location.id)).count, matches.count)
+    }
+
+    func testSearchCities_nameFallsBackToCountry() async throws {
+        let json = """
+        {"results": [
+            {"name": "Singapore", "latitude": 1.29, "longitude": 103.85, "country": "Singapore", "admin1": "Singapore"},
+            {"name": "Monaco", "latitude": 43.73, "longitude": 7.42, "country": "Monaco", "admin1": ""},
+            {"name": "Nowhere", "latitude": 0, "longitude": 0}
+        ]}
+        """.data(using: .utf8)!
+        URLProtocolMock.requestHandler = { request in
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, json)
+        }
+
+        let manager = WeatherManager(session: .mock)
+        let matches = try await manager.searchCities("x")
+
+        XCTAssertEqual(matches.map(\.location.name), ["Singapore, Singapore", "Monaco, Monaco", "Nowhere"])
+        XCTAssertEqual(matches.map(\.pickerTitle), ["Singapore, Singapore", "Monaco, Monaco", "Nowhere"])
+    }
+
+    func testSearchCities_noResults() async throws {
         let json = """
         { "results": [] }
         """.data(using: .utf8)!
@@ -341,29 +403,40 @@ final class WeatherManagerTests: XCTestCase {
         }
 
         let manager = WeatherManager(session: .mock)
-        let result = try await manager.searchCity("Atlantis")
+        let matches = try await manager.searchCities("Atlantis")
 
-        XCTAssertNil(result)
+        XCTAssertTrue(matches.isEmpty)
     }
 
-    func testSearchCity_emptyQuery() async throws {
+    func testSearchCities_missingResultsKey() async throws {
+        URLProtocolMock.requestHandler = { request in
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(#"{"generationtime_ms": 0.5}"#.utf8))
+        }
+
+        let manager = WeatherManager(session: .mock)
+        let matches = try await manager.searchCities("Atlantis")
+
+        XCTAssertTrue(matches.isEmpty)
+    }
+
+    func testSearchCities_emptyQuery() async throws {
         let manager = WeatherManager(session: .mock)
         do {
-            _ = try await manager.searchCity("")
+            _ = try await manager.searchCities("")
             XCTFail("Expected error for empty query")
         } catch {
             XCTAssertTrue(error is URLError)
         }
     }
 
-    func testSearchCity_networkError() async throws {
+    func testSearchCities_networkError() async throws {
         URLProtocolMock.requestHandler = { request in
             throw URLError(.timedOut)
         }
 
         let manager = WeatherManager(session: .mock)
         do {
-            _ = try await manager.searchCity("Paris")
+            _ = try await manager.searchCities("Paris")
             XCTFail("Expected error")
         } catch {
             XCTAssertTrue(error is URLError)

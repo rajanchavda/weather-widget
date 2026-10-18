@@ -264,7 +264,7 @@ Displays 12-hour temperature forecast as a line graph at the bottom of the menu 
 Swift Package Manager (3 targets):
 - `WeatherOverlayCore` — Library target with all logic (supports `@testable import`)
 - `WeatherOverlay` — Executable target (thin bootstrap entry point)
-- `WeatherOverlayTests` — XCTest suite (262 tests)
+- `WeatherOverlayTests` — XCTest suite (266 tests)
 
 ```swift
 .target(name: "WeatherOverlayCore", path: "Sources/Core")
@@ -379,7 +379,7 @@ Well-named functions/variables are self-documenting. Comments only when non-obvi
 ### `Sources/Core/Weather/WeatherManager.swift` (~604 lines)
 - Weather and air-quality data fetching
 - IP geolocation with fallback and a one-hour in-memory cache
-- Saved locations (`savedLocations`, `activeLocationId`, derived `activeLocation`) and city search (`searchCity` returns `SavedLocation?`)
+- Saved locations (`savedLocations`, `activeLocationId`, derived `activeLocation`) and city search (`searchCities` returns up to five `CityMatch` values)
 - One-time migration of the legacy `WeatherOverlay.manualLocation` UserDefaults key into a saved location; the key is then deleted
 - State management (`@Published`)
 - 5-minute auto-refresh, pause/resume, `forceRefresh()`
@@ -418,7 +418,7 @@ Well-named functions/variables are self-documenting. Comments only when non-obvi
 - `SunView.swift`, `CloudView.swift`, `FogView.swift` (~117, 85, 83 lines) — Animated sun, clouds and fog
 - `TemperatureLineView.swift` (~41 lines) — Temperature forecast graph
 
-### Test Suite (262 tests)
+### Test Suite (266 tests)
 - **`AppDelegateTests.swift` (26)** — Aurora-style hover preview via NSMenuDelegate, Eco Mode toggle flags and brightness restore, nested menu checkmarks, change-sink debounce, overlay window reuse on Space sync, 30 fps cap, Eco Mode persistence rules, Reset to Defaults
 - **`ColorHelpersTests.swift` (24)** — Temperature color boundaries, aurora colors for all WMO categories (day/night)
 - **`MenuBarManagerTests.swift` (66)** — Status item text for all weather conditions, °C/°F formatting and rounding, error/no-data/update-ready states, display modes, location title including the stale note, `showUpdateInProgress()`, Eco Mode, AQI, About item, Locations submenu, layout checkmark sync
@@ -427,7 +427,7 @@ Well-named functions/variables are self-documenting. Comments only when non-obvi
 - **`OverlaySettingsTests.swift` (32)** — Defaults, mutations, objectWillChange emission, WeatherUnit/AuroraStyle/StatusBarDisplayMode enum coverage, Eco Mode, AQI, UserDefaults persistence
 - **`RainIntensityTests.swift` (4)** — Drop count, speed, height, wind sway and thunderstorm flag for drizzle, light, medium, heavy
 - **`UpdateManagerTests.swift` (11)** — GitHub release JSON parsing, version comparison with `compare(_:options:.numeric)`, background check inside/outside an app bundle via URLProtocolMock, result handling
-- **`WeatherManagerTests.swift` (62)** — Initial state, success fetch, stale-data fallback on failure, network error, saved location overrides geo, searchCity, night detection, stale response discard via fetchGeneration guard, saved locations, `activeLocation`, legacy migration, AQI fetch, precipitation, geo-IP cache
+- **`WeatherManagerTests.swift` (66)** — Initial state, success fetch, stale-data fallback on failure, network error, saved location overrides geo, searchCities (top five, picker titles), night detection, stale response discard via fetchGeneration guard, saved locations, `activeLocation`, legacy migration, AQI fetch, precipitation, geo-IP cache
 - **`Helpers/URLProtocolMock.swift`** — Custom URLProtocol subclass intercepting all URL requests; supports immediate and delayed responses for deterministic mock behavior
 
 ---

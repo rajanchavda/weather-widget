@@ -555,16 +555,17 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
         let manager = weatherManager
         Task.detached {
             do {
-                let match = try await manager.searchCity(query)
+                let matches = try await manager.searchCities(query)
                 DispatchQueue.main.async {
                     guard let self = AppDelegate.shared else { return }
-                    if let match = match {
-                        self.weatherManager.addSavedLocation(match)
-                        self.menuBarManager.syncLocationsSubmenu()
-                        self.menuBarManager.updateStatusItem()
-                    } else {
+                    guard !matches.isEmpty else {
                         self.showLocationAlert("No match", "No city found matching \"\(query)\". Try a different spelling.")
+                        return
                     }
+                    guard let picked = matches.count == 1 ? matches[0] : self.pickCity(from: matches, query: query) else { return }
+                    self.weatherManager.addSavedLocation(picked.location)
+                    self.menuBarManager.syncLocationsSubmenu()
+                    self.menuBarManager.updateStatusItem()
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -572,6 +573,30 @@ public class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private func pickCity(from matches: [CityMatch], query: String) -> CityMatch? {
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.messageText = "Choose a City"
+        alert.informativeText = "Several places match \"\(query)\". Select the one you meant:"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        // Through the menu, because addItem(withTitle:) drops an earlier item with the same title.
+        for (index, match) in matches.enumerated() {
+            let item = NSMenuItem(title: match.pickerTitle, action: nil, keyEquivalent: "")
+            item.tag = index
+            popup.menu?.addItem(item)
+        }
+        alert.accessoryView = popup
+        alert.window.initialFirstResponder = popup
+
+        guard alert.runModal() == .alertFirstButtonReturn, let item = popup.selectedItem else { return nil }
+        return matches[item.tag]
     }
 
     @objc func removeLocation() {
