@@ -434,7 +434,7 @@ Well-named functions/variables are self-documenting. Comments only when non-obvi
 
 **Document Purpose**: Context for AI assistants to understand project structure and implementation.
 
-**Last Updated**: 2026-10-11  
-**Latest Release**: v2.3.1  
+**Last Updated**: 2026-10-19  
+**Latest Release**: v2.4.0  
 **Project Status**: Refactored into modular single-responsibility components  
 **Complexity Level**: Beginner-Intermediate (SwiftUI + Combine + AppKit)
