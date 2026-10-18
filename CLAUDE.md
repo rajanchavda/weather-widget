@@ -56,7 +56,7 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 - Publishes weather state via Combine `@Published` properties
 - NWPathMonitor integration for instant re-fetch on network reconnect
 - Multi-city support via `SavedLocation` persistence in UserDefaults
-- `searchCity()` async method using Open-Meteo Geocoding API, returns `SavedLocation?` (first match only)
+- `searchCities()` async method using Open-Meteo Geocoding API, returns up to five `CityMatch` values (`citySearchLimit`), each a `SavedLocation` named "City, Region" (country when there is no region) plus a "City, Region, Country" `pickerTitle`
 - Pause/resume lifecycle (`pause()`, `resume()`) for system sleep, display sleep and session switches
 - `forceRefresh()` for the Force Refresh Weather menu item: invalidates the geo-IP cache, then fetches
 - Air quality fetch from `air-quality-api.open-meteo.com` (European AQI), after every successful weather fetch
@@ -223,7 +223,7 @@ Built in `MenuBarManager.buildMenu(for:)`. Top level, in order:
 3. **Locations** (Submenu, `MenuTag.locations`, rebuilt by `syncLocationsSubmenu()`)
    - Auto (IP-based)
    - One item per saved location (the active one is checked)
-   - Add Location... - city search dialog
+   - Add Location... - city search dialog; with several matches, a picker of the top five
    - Remove Location... - picker dialog
 4. **Appearance** (Submenu)
    - **Atmospheric Aurora** (Toggle) - Enables/disables the aurora and all weather effects (not the forecast line)
@@ -347,7 +347,7 @@ log stream --level debug --predicate 'subsystem == "com.weatheroverlay.WeatherOv
 
 ### Test Suite
 - **Framework**: XCTest via Swift Package Manager (`swift test`)
-- **Total Tests**: 262
+- **Total Tests**: 266
 - **Coverage**: Not measured (no coverage tooling in the repo). Tests exist for WeatherManager, MenuBarManager, UpdateManager, NotificationManager, OverlaySettings, Models, ColorHelpers, and parts of AppDelegate. The SwiftUI views are not rendered in tests; only `RainView.RainIntensity` and the frame-rate constant are checked
 
 ### Test Files
@@ -361,7 +361,7 @@ log stream --level debug --predicate 'subsystem == "com.weatheroverlay.WeatherOv
 | `OverlaySettingsTests.swift` | 32 | Defaults, mutations, objectWillChange emission, enum coverage, display mode, eco mode, AQI toggle, UserDefaults persistence (round trip, invalid values, Eco Mode rules, in-memory mode) |
 | `RainIntensityTests.swift` | 4 | `dropCount`, `baseSpeed`, `baseHeight`, `windSway`, `isThunderstorm` for drizzle, light, medium, heavy |
 | `UpdateManagerTests.swift` | 11 | GitHub release JSON parsing, version comparison, background check inside/outside an app bundle and on network error, result handling (flag the menu without installing) |
-| `WeatherManagerTests.swift` | 62 | Initial state, success fetch, failed refresh keeps last good data as stale (age limit, location switch, recovery), network error, saved location overrides geo, searchCity, night detection, stale response discard, saved locations (add/switch/remove/persist), `activeLocation`, legacy manual-location migration, AQI fetch, precipitation, geo-IP cache (lifetime, invalidation, fallback, resume, races) |
+| `WeatherManagerTests.swift` | 66 | Initial state, success fetch, failed refresh keeps last good data as stale (age limit, location switch, recovery), network error, saved location overrides geo, searchCities (top five, display names), night detection, stale response discard, saved locations (add/switch/remove/persist), `activeLocation`, legacy manual-location migration, AQI fetch, precipitation, geo-IP cache (lifetime, invalidation, fallback, resume, races) |
 
 ### Test Helpers
 - **URLProtocolMock** — Custom URLProtocol subclass that intercepts all URL requests for deterministic mocking without modifying production code; supports per-URL delayed responses
@@ -431,6 +431,6 @@ WeatherOverlay/
 
 ---
 
-**Last Updated**: 2026-10-11  
-**Project Version**: 2.3.1 (latest release tag `v2.3.1`)  
+**Last Updated**: 2026-10-19  
+**Project Version**: 2.4.0 (latest release tag `v2.4.0`)  
 

@@ -37,6 +37,12 @@ struct FreeGeoResponse: Codable {
     let cityName: String?
 }
 
+/// A city search result: the location to save, and a longer title for telling same-named cities apart.
+struct CityMatch: Equatable {
+    let location: SavedLocation
+    let pickerTitle: String
+}
+
 struct GeocodingResponse: Codable {
     let results: [Result]?
     struct Result: Codable {

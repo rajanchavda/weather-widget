@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Weather API](https://img.shields.io/badge/Weather-Open--Meteo-brightgreen.svg)](https://open-meteo.com/)
 [![Battery Impact](https://img.shields.io/badge/Battery-Low%20Impact-success.svg)](#-performance--battery-optimization)
-[![Tests](https://img.shields.io/badge/Tests-262%20passing-brightgreen.svg)](#-development)
+[![Tests](https://img.shields.io/badge/Tests-266%20passing-brightgreen.svg)](#-development)
 [![GitHub stars](https://img.shields.io/github/stars/rajanchavda/weather-widget?style=social)](https://github.com/rajanchavda/weather-widget/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/rajanchavda/weather-widget.svg)](https://github.com/rajanchavda/weather-widget/issues)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-brightgreen.svg)](https://github.com/rajanchavda/weather-widget/commits/main)
@@ -90,7 +90,7 @@ brew upgrade rajanchavda/tap/weatheroverlay
    ```bash
    # Builds WeatherOverlay.app (ad-hoc signed) and WeatherOverlay.zip in the repository root.
    # The argument is the version written into the bundle (1.0.0 when omitted).
-   ./build_app.sh 2.3.1
+   ./build_app.sh 2.4.0
    cp -R WeatherOverlay.app /Applications/
    ```
 
@@ -171,7 +171,7 @@ The app offers two location modes — **Auto (IP-based)** and **Saved locations 
 - Accuracy: typically city-level (good enough for general weather glances).
 
 ### Saved locations
-- Open **Locations → Add Location...** and type a city name. The first match from Open-Meteo's free geocoding API is saved and becomes the active location.
+- Open **Locations → Add Location...** and type a city name. If Open-Meteo's free geocoding API finds several places, pick one of the top five (e.g. "Paris, Île-de-France, France" or "Paris, Texas, United States"). The city you add becomes the active location.
 - While a saved city is active it is **locked** and never changes on its own. Every refresh — auto, screen unlock, system wake, or ⌘R — uses the same coordinates, and no IP lookup is made.
 - You can save several cities and switch between them by clicking one in **Locations**.
 - Saved cities and the active choice **persist across app launches** (stored in `UserDefaults`).
@@ -405,7 +405,7 @@ WeatherOverlay/
 
 ### Running Tests
 
-The project includes **262 unit tests** covering the logic and state layers. The SwiftUI drawing code itself is not unit tested, apart from the rain intensity parameters and the frame-rate cap.
+The project includes **266 unit tests** covering the logic and state layers. The SwiftUI drawing code itself is not unit tested, apart from the rain intensity parameters and the frame-rate cap.
 
 ```bash
 swift test
@@ -419,7 +419,7 @@ swift test --filter WeatherManagerTests
 | Color Helpers (temperature/aurora) | 24 | ✅ |
 | Models (JSON decoding, saved-location persistence, AQI categories) | 19 | ✅ |
 | Settings (defaults, mutations, enums, persistence) | 32 | ✅ |
-| Weather Manager (fetch, stale data, saved locations, legacy migration, geo-IP cache, AQI, search) | 62 | ✅ |
+| Weather Manager (fetch, stale data, saved locations, legacy migration, geo-IP cache, AQI, search) | 66 | ✅ |
 | Menu Bar Manager (formatting, states, display modes, AQI, Eco Mode, Locations submenu) | 66 | ✅ |
 | Update Manager (version parsing, background check, result handling) | 11 | ✅ |
 | App Delegate (aurora hover preview, Eco Mode, change debounce, window reuse on Space switches, settings persistence) | 26 | ✅ |
@@ -482,7 +482,7 @@ A local signed and notarized build:
 ```bash
 CODESIGN_IDENTITY="Developer ID Application: Name (TEAMID)" \
 NOTARY_KEYCHAIN_PROFILE="<profile name>" \
-./build_app.sh 2.3.1
+./build_app.sh 2.4.0
 ```
 
 Repository secrets read by `release.yml`:
@@ -538,7 +538,7 @@ Working list from the October 2026 repo review. Items are ordered by priority wi
 - [ ] **Forecast popover** — hourly strip, 7-day view, feels-like, wind, UV, sunrise/sunset
 - [ ] **Precipitation-driven intensity** — scale rain and snow from mm/h and wind speed instead of WMO code buckets
 - [ ] **CoreLocation opt-in** for accurate location on VPNs
-- [ ] **City picker** — choose from the top five geocoding results
+- [x] **City picker** — choose from the top five geocoding results
 - [ ] **Rain nowcast** — "rain in 12 min" using Open-Meteo `minutely_15`
 - [ ] **Settings window** to replace the nested menus
 
