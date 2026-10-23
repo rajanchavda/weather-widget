@@ -191,7 +191,7 @@ Weather API → WeatherManager updates @Published property
 ### Menu Bar Controls
 Built in `MenuBarManager.buildMenu(for:)`. Top level, in order:
 
-1. **Location / Condition** - Two disabled info rows (city; temperature and description)
+1. **Location / Condition / Outlook** - Disabled info rows, drawn in full label color (city; temperature and description; when precipitation starts or eases in the next 12 hours)
 2. **Locations** (submenu) - Auto (IP-based), one item per saved city, Add Location..., Remove Location...
 3. **Appearance** (submenu)
    - **Atmospheric Aurora** - Master toggle for the aurora and weather effects (the forecast line has its own toggle)
@@ -264,7 +264,7 @@ Displays 12-hour temperature forecast as a line graph at the bottom of the menu 
 Swift Package Manager (3 targets):
 - `WeatherOverlayCore` — Library target with all logic (supports `@testable import`)
 - `WeatherOverlay` — Executable target (thin bootstrap entry point)
-- `WeatherOverlayTests` — XCTest suite (280 tests)
+- `WeatherOverlayTests` — XCTest suite (290 tests)
 
 ```swift
 .target(name: "WeatherOverlayCore", path: "Sources/Core")
@@ -419,7 +419,7 @@ Well-named functions/variables are self-documenting. Comments only when non-obvi
 - `SunView.swift`, `CloudView.swift`, `FogView.swift` (~117, 157, 83 lines) — Animated sun, clouds and fog
 - `TemperatureLineView.swift` (~41 lines) — Temperature forecast graph
 
-### Test Suite (280 tests)
+### Test Suite (290 tests)
 - **`AppDelegateTests.swift` (26)** — Aurora-style hover preview via NSMenuDelegate, Eco Mode toggle flags and brightness restore, nested menu checkmarks, change-sink debounce, overlay window reuse on Space sync, 30 fps cap, Eco Mode persistence rules, Reset to Defaults
 - **`CloudCoverTests.swift` (4)** — `CloudView.CloudCover` code mapping, cloud count per level, overcast and night tints
 - **`ColorHelpersTests.swift` (24)** — Temperature color boundaries, aurora colors for all WMO categories (day/night)
