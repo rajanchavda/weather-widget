@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Weather API](https://img.shields.io/badge/Weather-Open--Meteo-brightgreen.svg)](https://open-meteo.com/)
 [![Battery Impact](https://img.shields.io/badge/Battery-Low%20Impact-success.svg)](#-performance--battery-optimization)
-[![Tests](https://img.shields.io/badge/Tests-274%20passing-brightgreen.svg)](#-development)
+[![Tests](https://img.shields.io/badge/Tests-280%20passing-brightgreen.svg)](#-development)
 [![GitHub stars](https://img.shields.io/github/stars/rajanchavda/weather-widget?style=social)](https://github.com/rajanchavda/weather-widget/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/rajanchavda/weather-widget.svg)](https://github.com/rajanchavda/weather-widget/issues)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-brightgreen.svg)](https://github.com/rajanchavda/weather-widget/commits/main)
@@ -222,6 +222,7 @@ The aurora background automatically changes color based on real-time weather con
 - **Sun**: 12 slowly rotating rays, a pulsing halo, a drifting lens flare and floating dust motes
 - **Clouds**: 2 faint clouds when mainly clear, 3 when partly cloudy (with the sun or stars still showing), 6 grayer ones when overcast; dim and cool-tinted at night
 - **Fog**: 8 blurred wisps drifting across the top half of the bar
+- **Weather changes**: the aurora colors and effects crossfade over 1.5 seconds, and rain and snow start with a few particles and build to full strength over about 4 seconds
 - **Stars**: 4x density compared to typical apps (one star per 25px of width), deterministic twinkling patterns (roughly 3.4-12.6s cycles), and a shooting star every 15 seconds
 
 ## 📊 Temperature Forecast Line (How It Works)
@@ -394,6 +395,7 @@ WeatherOverlay/
         ├── MenuBarManagerTests.swift
         ├── ModelsTests.swift
         ├── NotificationManagerTests.swift
+        ├── OverlayAnimationTests.swift
         ├── OverlaySettingsTests.swift
         ├── RainIntensityTests.swift
         ├── SnowIntensityTests.swift
@@ -407,7 +409,7 @@ WeatherOverlay/
 
 ### Running Tests
 
-The project includes **274 unit tests** covering the logic and state layers. The SwiftUI drawing code itself is not unit tested, apart from the rain, snow and cloud cover parameters and the frame-rate cap.
+The project includes **280 unit tests** covering the logic and state layers. The SwiftUI drawing code itself is not unit tested, apart from the rain, snow and cloud cover parameters, the particle build-up and the frame-rate cap.
 
 ```bash
 swift test

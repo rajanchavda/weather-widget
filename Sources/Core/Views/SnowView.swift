@@ -5,6 +5,7 @@ struct SnowView: View {
     let height: CGFloat
     let intensity: SnowIntensity
     let freezeDate: Date?
+    @State private var appearedAt = Date()
 
     init(width: CGFloat, height: CGFloat, intensity: SnowIntensity, freezeDate: Date? = nil) {
         self.width = width
@@ -76,7 +77,13 @@ struct SnowView: View {
     }
 
     private func render(at time: TimeInterval, context: inout GraphicsContext, size: CGSize) {
+        // A frozen Eco Mode frame shows the full strength rather than the start of the ramp.
+        let elapsed = freezeDate == nil ? time - appearedAt.timeIntervalSinceReferenceDate : .infinity
+
         for i in 0..<intensity.flakeCount {
+            let rampOpacity = OverlayAnimation.particleRampOpacity(index: i, count: intensity.flakeCount, elapsed: elapsed)
+            if rampOpacity == 0 { continue }
+
             // Depth Layering (3D Parallax)
             let layerSeed = (i * 7) % 3
             let depthFactor = layerSeed == 0 ? 1.5 : (layerSeed == 1 ? 1.0 : 0.6)
@@ -120,7 +127,7 @@ struct SnowView: View {
             }
             
             let layerOpacity = depthFactor > 1.2 ? 0.6 : (depthFactor > 0.8 ? 0.85 : 0.4)
-            let finalOpacity = fadeOpacity * layerOpacity
+            let finalOpacity = fadeOpacity * layerOpacity * rampOpacity
 
             let flakeRect = CGRect(x: x - flakeSize/2, y: y - flakeSize/2, width: flakeSize, height: flakeSize)
             

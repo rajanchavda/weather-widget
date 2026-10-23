@@ -118,6 +118,8 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 - Effective weather code and night flag: hover preview (`settings.isPreviewing`) wins, then the selected aurora style (`settings.manualWeatherCode`, `manualIsNight`), then `WeatherManager`
 - Eco Mode passes a fixed `freezeDate` to every animated view, which then draws a single static frame
 - `OverlayAnimation.frameInterval` (1/30 s) is defined here
+- **Weather changes crossfade**: the aurora is keyed (`.id`) on its color palette and every effect layer uses `OverlayAnimation.weatherTransition`, a 1.5 s opacity crossfade (`weatherCrossfadeDuration`). Rain and snow are keyed on their intensity, sun and fog on a fixed id, and clouds on code plus night, so a layer is only replaced when it actually looks different
+- **Particle build-up**: `RainView` and `SnowView` record when they appeared and ramp in through `OverlayAnimation.particleRampOpacity(index:count:elapsed:)`. Particles join one after another over `particleRampDuration` (4 s), each fading in over `particleFadeInDuration` (1 s). A frozen Eco Mode frame shows full strength
 
 **Rain Animation System** (`Sources/Core/Views/RainView.swift`, `RainView.RainIntensity`):
 
@@ -354,8 +356,8 @@ log stream --level debug --predicate 'subsystem == "com.weatheroverlay.WeatherOv
 
 ### Test Suite
 - **Framework**: XCTest via Swift Package Manager (`swift test`)
-- **Total Tests**: 274
-- **Coverage**: Not measured (no coverage tooling in the repo). Tests exist for WeatherManager, MenuBarManager, UpdateManager, NotificationManager, OverlaySettings, Models, ColorHelpers, and parts of AppDelegate. The SwiftUI views are not rendered in tests; only `RainView.RainIntensity` and the frame-rate constant, `CloudView.CloudCover` and `SnowView.SnowIntensity` are checked
+- **Total Tests**: 280
+- **Coverage**: Not measured (no coverage tooling in the repo). Tests exist for WeatherManager, MenuBarManager, UpdateManager, NotificationManager, OverlaySettings, Models, ColorHelpers, and parts of AppDelegate. The SwiftUI views are not rendered in tests; only `RainView.RainIntensity` and the frame-rate constant, the particle ramp, `CloudView.CloudCover` and `SnowView.SnowIntensity` are checked
 
 ### Test Files
 | File | Tests | What It Covers |
@@ -366,6 +368,7 @@ log stream --level debug --predicate 'subsystem == "com.weatheroverlay.WeatherOv
 | `MenuBarManagerTests.swift` | 66 | Status item text (all emoji types), °C/°F formatting and rounding, error/no-data states, update-ready indicator, display modes, location row including the stale "last updated" note, `showUpdateInProgress()`, Eco Mode leaf and menu item, AQI display and toggle item, About item, Locations submenu, aurora submenu delegate, layout checkmark sync |
 | `ModelsTests.swift` | 19 | JSON decoding for all API types (incl. AQI, Geocoding), SavedLocation Codable round-trip, equality and persistence, AQICategory |
 | `NotificationManagerTests.swift` | 18 | Alert classification per WMO code (freezing rain before rain, precipitation gate), onset-only alerts, look-ahead window, cooldown, freezing temperature in the selected unit, suppression (stale data, alerts off, no data), city switch |
+| `OverlayAnimationTests.swift` | 6 | Particle ramp opacity (first particle, staggered joins, full strength after the ramp, frozen frame, empty effect), ramp and crossfade durations |
 | `OverlaySettingsTests.swift` | 32 | Defaults, mutations, objectWillChange emission, enum coverage, display mode, eco mode, AQI toggle, UserDefaults persistence (round trip, invalid values, Eco Mode rules, in-memory mode) |
 | `RainIntensityTests.swift` | 4 | `dropCount`, `baseSpeed`, `baseHeight`, `windSway`, `isThunderstorm` for drizzle, light, medium, heavy |
 | `SnowIntensityTests.swift` | 4 | `SnowView.SnowIntensity` code mapping and `flakeCount`, `baseSpeed`, `windDrift`, `frostHeight` for light, moderate, heavy |
@@ -431,6 +434,7 @@ WeatherOverlay/
         ├── MenuBarManagerTests.swift
         ├── ModelsTests.swift
         ├── NotificationManagerTests.swift
+        ├── OverlayAnimationTests.swift
         ├── OverlaySettingsTests.swift
         ├── RainIntensityTests.swift
         ├── SnowIntensityTests.swift

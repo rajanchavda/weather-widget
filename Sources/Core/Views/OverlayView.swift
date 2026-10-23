@@ -4,6 +4,25 @@ enum OverlayAnimation {
     /// Effects are slow-moving, so 30 fps looks the same as the display's native rate
     /// (up to 120 Hz on ProMotion) at a fraction of the redraws.
     static let frameInterval: TimeInterval = 1.0 / 30.0
+
+    /// Weather changes crossfade the old aurora and effects into the new ones over this long.
+    static let weatherCrossfadeDuration: TimeInterval = 1.5
+
+    static var weatherTransition: AnyTransition {
+        .opacity.animation(.easeInOut(duration: weatherCrossfadeDuration))
+    }
+
+    /// Rain and snow start with a few particles and reach full strength over this long.
+    static let particleRampDuration: TimeInterval = 4.0
+    static let particleFadeInDuration: TimeInterval = 1.0
+
+    /// Opacity multiplier for particle `index` of `count`, `elapsed` seconds after the effect appeared.
+    /// Particles join one after another across the ramp, each fading in so none pops into view mid-fall.
+    static func particleRampOpacity(index: Int, count: Int, elapsed: TimeInterval) -> Double {
+        guard count > 0 else { return 1 }
+        let start = particleRampDuration * Double(index) / Double(count)
+        return min(max((elapsed - start) / particleFadeInDuration, 0), 1)
+    }
 }
 
 struct OverlayView: View {
@@ -27,10 +46,13 @@ struct OverlayView: View {
                         colors: currentAuroraColors(),
                         height: geometry.size.height
                     )
-                    .transition(.opacity)
+                    // A new identity per palette lets the old gradient crossfade into the new one.
+                    .id(currentAuroraColors())
+                    .transition(OverlayAnimation.weatherTransition)
 
                     if shouldShowStars() {
                         StarsView(width: geometry.size.width, height: geometry.size.height, freezeDate: freezeDate)
+                            .transition(OverlayAnimation.weatherTransition)
                     }
 
                     let code = getEffectiveWeatherCode()
@@ -38,12 +60,14 @@ struct OverlayView: View {
                     // Partly cloudy keeps the sun (or stars) behind its clouds; overcast hides them.
                     if code >= 0 && code <= 2 && !checkIsNight() {
                         SunView(width: geometry.size.width, height: geometry.size.height, freezeDate: freezeDate)
-                            .id("sun-\(code)")
+                            .id("sun")
+                            .transition(OverlayAnimation.weatherTransition)
                     }
 
                     if let cover = CloudView.CloudCover(weatherCode: code) {
                         CloudView(width: geometry.size.width, height: geometry.size.height, cover: cover, isNight: checkIsNight(), freezeDate: freezeDate)
-                            .id("clouds-\(code)")
+                            .id("clouds-\(code)-\(checkIsNight())")
+                            .transition(OverlayAnimation.weatherTransition)
                     }
 
                     if code == 45 || code == 48 {
@@ -51,32 +75,38 @@ struct OverlayView: View {
                             .frame(height: geometry.size.height / 2)
                             .frame(maxHeight: .infinity, alignment: .top)
                             .clipped()
-                            .id("fog-\(code)")
+                            .id("fog")
+                            .transition(OverlayAnimation.weatherTransition)
                     }
 
                     if code >= 51 && code <= 55 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .drizzle, freezeDate: freezeDate)
-                            .id("rain-drizzle-\(code)")
+                            .id("rain-drizzle")
+                            .transition(OverlayAnimation.weatherTransition)
                     }
 
                     if code >= 56 && code <= 67 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .light, freezeDate: freezeDate)
-                            .id("rain-light-\(code)")
+                            .id("rain-light")
+                            .transition(OverlayAnimation.weatherTransition)
                     }
 
                     if code >= 80 && code <= 82 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .medium, freezeDate: freezeDate)
-                            .id("rain-medium-\(code)")
+                            .id("rain-medium")
+                            .transition(OverlayAnimation.weatherTransition)
                     }
 
                     if code >= 95 && code <= 99 && shouldShowRainAnimation() {
                         RainView(width: geometry.size.width, height: geometry.size.height, intensity: .heavy, freezeDate: freezeDate)
-                            .id("rain-heavy-\(code)")
+                            .id("rain-heavy")
+                            .transition(OverlayAnimation.weatherTransition)
                     }
 
                     if let intensity = SnowView.SnowIntensity(weatherCode: code) {
                         SnowView(width: geometry.size.width, height: geometry.size.height, intensity: intensity, freezeDate: freezeDate)
-                            .id("snow-\(code)")
+                            .id("snow-\(intensity)")
+                            .transition(OverlayAnimation.weatherTransition)
                     }
                 }
 
