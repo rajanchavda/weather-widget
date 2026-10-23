@@ -449,5 +449,5 @@ WeatherOverlay/
 ---
 
 **Last Updated**: 2026-10-24  
-**Project Version**: 2.5.0 (latest release tag `v2.5.0`)  
+**Project Version**: 2.6.0 (latest release tag `v2.6.0`)  
 
