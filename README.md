@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Weather API](https://img.shields.io/badge/Weather-Open--Meteo-brightgreen.svg)](https://open-meteo.com/)
 [![Battery Impact](https://img.shields.io/badge/Battery-Low%20Impact-success.svg)](#-performance--battery-optimization)
-[![Tests](https://img.shields.io/badge/Tests-280%20passing-brightgreen.svg)](#-development)
+[![Tests](https://img.shields.io/badge/Tests-290%20passing-brightgreen.svg)](#-development)
 [![GitHub stars](https://img.shields.io/github/stars/rajanchavda/weather-widget?style=social)](https://github.com/rajanchavda/weather-widget/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/rajanchavda/weather-widget.svg)](https://github.com/rajanchavda/weather-widget/issues)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-brightgreen.svg)](https://github.com/rajanchavda/weather-widget/commits/main)
@@ -125,7 +125,7 @@ brew uninstall --zap weatheroverlay
 
 The app runs as a menu bar item (no Dock icon). Click the weather icon to open the menu:
 
-- **Location / Condition** - Two read-only rows at the top: the current city, and the temperature with a short description (e.g. "Condition: 18.4°C • Partly Cloudy")
+- **Location / Condition / Outlook** - Read-only rows at the top: the current city, the temperature with a short description (e.g. "Condition: 18.4°C • Partly Cloudy"), and when rain or snow starts or stops in the next 12 hours (e.g. "Outlook: Rain starting around 4 PM" or "Outlook: Dry for the next 12 hours")
 - **Locations** 📍
   - **Auto (IP-based)** - Detect the city from your public IP (default)
   - *Your saved cities* - Click one to switch to it; the active one is ticked
@@ -409,7 +409,7 @@ WeatherOverlay/
 
 ### Running Tests
 
-The project includes **280 unit tests** covering the logic and state layers. The SwiftUI drawing code itself is not unit tested, apart from the rain, snow and cloud cover parameters, the particle build-up and the frame-rate cap.
+The project includes **290 unit tests** covering the logic and state layers. The SwiftUI drawing code itself is not unit tested, apart from the rain, snow and cloud cover parameters, the particle build-up and the frame-rate cap.
 
 ```bash
 swift test

@@ -22,7 +22,7 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 - Creates the `NSStatusItem` (stored in `AppDelegate.statusItem`) and builds the full `NSMenu` in `buildMenu(for:)` — see User Controls for the structure
 - Exposes `updateStatusItem()` (reads from WeatherManager directly), `syncMenuStates()`, `syncUnitSubmenu()`, `syncBrightnessSubmenu()`, `syncAuroraStyleSubmenu()`, `syncDisplayModeSubmenu()`, `syncLocationsSubmenu()`, `showUpdateAvailable(version:)`, `showUpdateInProgress()`
 - Menu items target `AppDelegate`'s `@objc` methods
-- Rows are found by `MenuTag` (`location`, `condition`, `locations`, `brightness`, `auroraStyle`, `layout`, `unit`) or by action selector, searching submenus recursively. Never look a row up by index
+- Rows are found by `MenuTag` (`location`, `condition`, `locations`, `brightness`, `auroraStyle`, `layout`, `unit`, `outlook`) or by action selector, searching submenus recursively. Never look a row up by index
 - Supports three status bar display modes: Icon+Temp, Icon Only, Temp Only
 - Status item title: `💤` while paused, `⚠️ Err` on error, `🌤️ --` with no data, otherwise emoji and/or temperature (one decimal). Suffixes in order: ` AQI: <n> <label>` (when `showAQI` and a value exists), ` 🌱` (Eco Mode), ` ⚠️` (update available)
 - Location row: `Location: <city>`, with ` (last updated <time>)` appended while the data is stale
@@ -229,6 +229,8 @@ Built in `MenuBarManager.buildMenu(for:)`. Top level, in order:
 
 1. **Location: …** (disabled info row, `MenuTag.location`)
 2. **Condition: …** (disabled info row, `MenuTag.condition`) - temperature and description; reads "Status: Downloading update via Homebrew..." during an upgrade
+   - Followed by **Outlook: …** (disabled info row, `MenuTag.outlook`): when precipitation starts or eases in the 12-hour window, e.g. "Rain starting around 4 PM", "Snow easing around 1 AM", "Dry for the next 12 hours" (`MenuBarManager.precipitationOutlook`). Hourly resolution; "Snow" for snow codes. Hidden while paused, on error, with no data and while the data is stale
+   - The info rows are drawn by `InfoRowView` (an `NSMenuItem.view`: SF Symbol plus text in `labelColor`), because macOS grays out a disabled item's title whatever its color. `MenuBarManager.setInfoTitle` keeps `title` and the drawn text in step
 3. **Locations** (Submenu, `MenuTag.locations`, rebuilt by `syncLocationsSubmenu()`)
    - Auto (IP-based)
    - One item per saved location (the active one is checked)
@@ -356,7 +358,7 @@ log stream --level debug --predicate 'subsystem == "com.weatheroverlay.WeatherOv
 
 ### Test Suite
 - **Framework**: XCTest via Swift Package Manager (`swift test`)
-- **Total Tests**: 280
+- **Total Tests**: 290
 - **Coverage**: Not measured (no coverage tooling in the repo). Tests exist for WeatherManager, MenuBarManager, UpdateManager, NotificationManager, OverlaySettings, Models, ColorHelpers, and parts of AppDelegate. The SwiftUI views are not rendered in tests; only `RainView.RainIntensity` and the frame-rate constant, the particle ramp, `CloudView.CloudCover` and `SnowView.SnowIntensity` are checked
 
 ### Test Files
@@ -365,7 +367,7 @@ log stream --level debug --predicate 'subsystem == "com.weatheroverlay.WeatherOv
 | `AppDelegateTests.swift` | 26 | Aurora-style hover preview through `NSMenuDelegate`, Eco Mode toggle flags and brightness save/restore, nested menu checkmarks, change-sink debounce (`observeChanges`), overlay window reuse/creation/cleanup on Space sync, 30 fps cap, persistence of manual vs. automatic Eco Mode, Reset to Defaults |
 | `CloudCoverTests.swift` | 4 | `CloudView.CloudCover` code mapping, cloud count per level, overcast and night tints |
 | `ColorHelpersTests.swift` | 24 | Temperature color boundaries, aurora colors (all WMO categories, day/night) |
-| `MenuBarManagerTests.swift` | 66 | Status item text (all emoji types), °C/°F formatting and rounding, error/no-data states, update-ready indicator, display modes, location row including the stale "last updated" note, `showUpdateInProgress()`, Eco Mode leaf and menu item, AQI display and toggle item, About item, Locations submenu, aurora submenu delegate, layout checkmark sync |
+| `MenuBarManagerTests.swift` | 76 | Status item text (all emoji types), °C/°F formatting and rounding, error/no-data states, update-ready indicator, display modes, location row including the stale "last updated" note, info rows drawn as full-color views, precipitation outlook (dry, starts, eases, all window, snow, row visibility), `showUpdateInProgress()`, Eco Mode leaf and menu item, AQI display and toggle item, About item, Locations submenu, aurora submenu delegate, layout checkmark sync |
 | `ModelsTests.swift` | 19 | JSON decoding for all API types (incl. AQI, Geocoding), SavedLocation Codable round-trip, equality and persistence, AQICategory |
 | `NotificationManagerTests.swift` | 18 | Alert classification per WMO code (freezing rain before rain, precipitation gate), onset-only alerts, look-ahead window, cooldown, freezing temperature in the selected unit, suppression (stale data, alerts off, no data), city switch |
 | `OverlayAnimationTests.swift` | 6 | Particle ramp opacity (first particle, staggered joins, full strength after the ramp, frozen frame, empty effect), ramp and crossfade durations |

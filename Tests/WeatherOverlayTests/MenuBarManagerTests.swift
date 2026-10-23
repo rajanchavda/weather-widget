@@ -271,6 +271,118 @@ final class MenuBarManagerTests: XCTestCase {
         XCTAssertEqual(conditionTitle, "Condition: --")
     }
 
+    func testInfoRows_drawnAsFullColorViewsInStepWithTitle() {
+        menuBarManager.buildMenu(for: appDelegate.statusItem!)
+        menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
+
+        for tag in [MenuBarManager.MenuTag.location, .condition, .outlook] {
+            let item = menuItem(tag)
+            let row = item?.view as? InfoRowView
+            XCTAssertNotNil(row, "\(tag)")
+            XCTAssertEqual(row?.label.textColor, NSColor.labelColor, "\(tag)")
+            XCTAssertNotNil(row?.iconView.image, "\(tag)")
+        }
+        let conditionRow = menuItem(.condition)?.view as? InfoRowView
+        XCTAssertEqual(conditionRow?.label.stringValue, "Condition: 20.0°C • Clear Sky")
+        XCTAssertEqual(menuItem(.condition)?.title, "Condition: 20.0°C • Clear Sky")
+    }
+
+    func testInfoRow_widthFollowsText() {
+        let row = InfoRowView(symbolName: "mappin")
+        row.setText("Location: A")
+        let shortWidth = row.frame.width
+        row.setText("Location: A much longer city name, Region")
+        XCTAssertGreaterThan(row.frame.width, shortWidth)
+    }
+
+    // MARK: - Precipitation Outlook
+
+    private func hourlyTimes(from startHour: Int, count: Int = 12) -> [String] {
+        (0..<count).map { offset in
+            let hour = (startHour + offset) % 24
+            let day = 24 + (startHour + offset) / 24
+            return String(format: "2026-10-%02dT%02d:00", day, hour)
+        }
+    }
+
+    func testOutlook_dryAllWindow() {
+        let outlook = MenuBarManager.precipitationOutlook(
+            precipitation: Array(repeating: 0, count: 12),
+            codes: Array(repeating: 1, count: 12),
+            times: hourlyTimes(from: 9)
+        )
+        XCTAssertEqual(outlook, "Dry for the next 12 hours")
+    }
+
+    func testOutlook_rainStartsLater() {
+        var precipitation = Array(repeating: 0.0, count: 12)
+        precipitation[7] = 0.4
+        precipitation[8] = 1.2
+        let outlook = MenuBarManager.precipitationOutlook(
+            precipitation: precipitation,
+            codes: Array(repeating: 61, count: 12),
+            times: hourlyTimes(from: 9)
+        )
+        XCTAssertEqual(outlook, "Rain starting around 4 PM")
+    }
+
+    func testOutlook_rainingNowEases() {
+        var precipitation = Array(repeating: 0.0, count: 12)
+        precipitation[0] = 2.0
+        precipitation[1] = 0.5
+        let outlook = MenuBarManager.precipitationOutlook(
+            precipitation: precipitation,
+            codes: Array(repeating: 63, count: 12),
+            times: hourlyTimes(from: 23)
+        )
+        XCTAssertEqual(outlook, "Rain easing around 1 AM")
+    }
+
+    func testOutlook_rainingWholeWindow() {
+        let outlook = MenuBarManager.precipitationOutlook(
+            precipitation: Array(repeating: 1.0, count: 12),
+            codes: Array(repeating: 63, count: 12),
+            times: hourlyTimes(from: 9)
+        )
+        XCTAssertEqual(outlook, "Rain for the next 12 hours")
+    }
+
+    func testOutlook_snowCodeSaysSnow() {
+        var precipitation = Array(repeating: 0.0, count: 12)
+        precipitation[3] = 0.6
+        var codes = Array(repeating: 3, count: 12)
+        codes[3] = 73
+        let outlook = MenuBarManager.precipitationOutlook(
+            precipitation: precipitation,
+            codes: codes,
+            times: hourlyTimes(from: 9)
+        )
+        XCTAssertEqual(outlook, "Snow starting around 12 PM")
+    }
+
+    func testOutlook_noHourlyData() {
+        XCTAssertNil(MenuBarManager.precipitationOutlook(precipitation: [], codes: [], times: []))
+    }
+
+    func testOutlookRow_shownWithDataHiddenWhenStale() {
+        weatherManager.hourlyPrecipitation = Array(repeating: 0, count: 12)
+        weatherManager.hourlyCodes = Array(repeating: 0, count: 12)
+        weatherManager.hourlyTimes = hourlyTimes(from: 9)
+
+        menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
+        XCTAssertEqual(menuItem(.outlook)?.isHidden, false)
+        XCTAssertEqual(menuItem(.outlook)?.title, "Outlook: Dry for the next 12 hours")
+
+        weatherManager.isStale = true
+        menuBarManager.updateStatusItem(temp: 20.0, code: 0, city: "Tokyo", hasData: true, error: nil)
+        XCTAssertEqual(menuItem(.outlook)?.isHidden, true)
+    }
+
+    func testOutlookRow_hiddenWithoutData() {
+        menuBarManager.updateStatusItem(temp: 0.0, code: 0, city: "Detecting...", hasData: false, error: nil)
+        XCTAssertEqual(menuItem(.outlook)?.isHidden, true)
+    }
+
     func testShowUpdateInProgress_setsConditionRowOnly() {
         menuBarManager.showUpdateInProgress()
 
@@ -795,5 +907,10 @@ class MockAppDelegate: AppDelegate {
         let conditionItem = NSMenuItem(title: "Condition: --", action: nil, keyEquivalent: "")
         conditionItem.tag = MenuBarManager.MenuTag.condition.rawValue
         statusItem?.menu?.addItem(conditionItem)
+
+        let outlookItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        outlookItem.tag = MenuBarManager.MenuTag.outlook.rawValue
+        outlookItem.isHidden = true
+        statusItem?.menu?.addItem(outlookItem)
     }
 }

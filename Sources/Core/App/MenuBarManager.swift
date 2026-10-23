@@ -15,6 +15,7 @@ class MenuBarManager {
         case auroraStyle = 1005
         case layout = 1006
         case unit = 1007
+        case outlook = 1008
     }
 
     static let staleTimeFormatter: DateFormatter = {
@@ -42,17 +43,11 @@ class MenuBarManager {
     func buildMenu(for statusItem: NSStatusItem) {
         let menu = NSMenu()
 
-
-
-        let locationItem = NSMenuItem(title: "Location: Detecting...", action: nil, keyEquivalent: "")
-        locationItem.isEnabled = false
-        locationItem.tag = MenuTag.location.rawValue
-        menu.addItem(locationItem)
-        
-        let conditionItem = NSMenuItem(title: "Condition: --", action: nil, keyEquivalent: "")
-        conditionItem.isEnabled = false
-        conditionItem.tag = MenuTag.condition.rawValue
-        menu.addItem(conditionItem)
+        menu.addItem(Self.makeInfoItem(tag: .location, symbolName: "mappin", title: "Location: Detecting..."))
+        menu.addItem(Self.makeInfoItem(tag: .condition, symbolName: "thermometer.medium", title: "Condition: --"))
+        let outlookItem = Self.makeInfoItem(tag: .outlook, symbolName: "umbrella", title: "Outlook: --")
+        outlookItem.isHidden = true
+        menu.addItem(outlookItem)
 
         let locationsSubmenu = NSMenu()
         let autoItem = NSMenuItem(title: "Auto (IP-based)", action: #selector(AppDelegate.switchToAutoLocation), keyEquivalent: "")
@@ -299,7 +294,7 @@ class MenuBarManager {
 
         if let menu = appDelegate.statusItem?.menu {
             if let locationItem = findMenuItem(withTag: MenuTag.location.rawValue, in: menu) {
-                locationItem.title = locationTitle
+                Self.setInfoTitle(locationTitle, on: locationItem)
             }
 
             let conditionString: String
@@ -316,9 +311,75 @@ class MenuBarManager {
                 conditionString = "Condition: \(formattedTemp) • \(desc)"
             }
             if let conditionItem = findMenuItem(withTag: MenuTag.condition.rawValue, in: menu) {
-                conditionItem.title = conditionString
+                Self.setInfoTitle(conditionString, on: conditionItem)
+            }
+
+            if let outlookItem = findMenuItem(withTag: MenuTag.outlook.rawValue, in: menu) {
+                // Stale data was sliced at an earlier hour, so "now" in it may already be past.
+                let outlook = weatherManager.isPaused || error != nil || !hasData || weatherManager.isStale
+                    ? nil
+                    : Self.precipitationOutlook(
+                        precipitation: weatherManager.hourlyPrecipitation,
+                        codes: weatherManager.hourlyCodes,
+                        times: weatherManager.hourlyTimes
+                    )
+                if let outlook {
+                    Self.setInfoTitle("Outlook: \(outlook)", on: outlookItem)
+                }
+                outlookItem.isHidden = outlook == nil
             }
         }
+    }
+
+    private static func makeInfoItem(tag: MenuTag, symbolName: String, title: String) -> NSMenuItem {
+        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        item.tag = tag.rawValue
+        item.view = InfoRowView(symbolName: symbolName)
+        setInfoTitle(title, on: item)
+        return item
+    }
+
+    /// Keeps `title` (accessibility, lookups) and the row's drawn text in step.
+    static func setInfoTitle(_ title: String, on item: NSMenuItem) {
+        item.title = title
+        (item.view as? InfoRowView)?.setText(title)
+    }
+
+    /// One-line summary of when precipitation starts or stops in the hourly window (index 0 is the current hour).
+    /// Times are the location's wall-clock hours, so they are read without any time-zone conversion.
+    nonisolated static func precipitationOutlook(precipitation: [Double], codes: [Int], times: [String]) -> String? {
+        let hours = min(precipitation.count, times.count)
+        guard hours > 0 else { return nil }
+        let isWet = { (hour: Int) in precipitation[hour] > 0 }
+        let kind = { (hour: Int) -> String in
+            let code = codes.indices.contains(hour) ? codes[hour] : 0
+            return (71...77).contains(code) || (85...86).contains(code) ? "Snow" : "Rain"
+        }
+
+        if isWet(0) {
+            guard let dryHour = (1..<hours).first(where: { !isWet($0) }) else {
+                return "\(kind(0)) for the next \(hours) hours"
+            }
+            return "\(kind(0)) easing around \(hourLabel(times[dryHour]))"
+        }
+        guard let wetHour = (1..<hours).first(where: isWet) else {
+            return "Dry for the next \(hours) hours"
+        }
+        return "\(kind(wetHour)) starting around \(hourLabel(times[wetHour]))"
+    }
+
+    private nonisolated static func hourLabel(_ iso: String) -> String {
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
+        parser.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        guard let date = parser.date(from: iso) else { return iso }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "h a"
+        return formatter.string(from: date)
     }
     
     private func getWeatherDescription(_ code: Int) -> String {
@@ -514,7 +575,7 @@ class MenuBarManager {
     func showUpdateInProgress() {
         guard let menu = appDelegate.statusItem?.menu,
               let item = findMenuItem(withTag: MenuTag.condition.rawValue, in: menu) else { return }
-        item.title = "Status: Downloading update via Homebrew..."
+        Self.setInfoTitle("Status: Downloading update via Homebrew...", on: item)
     }
 
     // MARK: - Helpers
@@ -545,5 +606,50 @@ class MenuBarManager {
             }
         }
         return nil
+    }
+}
+
+// MARK: - Info Row
+
+/// Read-only menu row drawn as a plain view, because macOS grays out a disabled item's title whatever its color.
+final class InfoRowView: NSView {
+    let label = NSTextField(labelWithString: "")
+    let iconView = NSImageView()
+
+    private static let height: CGFloat = 22
+    private static let leadingInset: CGFloat = 14
+    private static let iconSize: CGFloat = 16
+    private static let iconGap: CGFloat = 6
+    private static let trailingInset: CGFloat = 20
+
+    init(symbolName: String) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 200, height: Self.height))
+        autoresizingMask = .width
+
+        iconView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+        iconView.contentTintColor = .secondaryLabelColor
+        iconView.frame = NSRect(
+            x: Self.leadingInset,
+            y: (Self.height - Self.iconSize) / 2,
+            width: Self.iconSize,
+            height: Self.iconSize
+        )
+        addSubview(iconView)
+
+        label.font = .menuFont(ofSize: 0)
+        label.textColor = .labelColor
+        addSubview(label)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func setText(_ text: String) {
+        label.stringValue = text
+        label.sizeToFit()
+        let labelX = Self.leadingInset + Self.iconSize + Self.iconGap
+        label.setFrameOrigin(NSPoint(x: labelX, y: (Self.height - label.frame.height) / 2))
+        setFrameSize(NSSize(width: labelX + label.frame.width + Self.trailingInset, height: Self.height))
     }
 }
