@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Weather API](https://img.shields.io/badge/Weather-Open--Meteo-brightgreen.svg)](https://open-meteo.com/)
 [![Battery Impact](https://img.shields.io/badge/Battery-Low%20Impact-success.svg)](#-performance--battery-optimization)
-[![Tests](https://img.shields.io/badge/Tests-266%20passing-brightgreen.svg)](#-development)
+[![Tests](https://img.shields.io/badge/Tests-270%20passing-brightgreen.svg)](#-development)
 [![GitHub stars](https://img.shields.io/github/stars/rajanchavda/weather-widget?style=social)](https://github.com/rajanchavda/weather-widget/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/rajanchavda/weather-widget.svg)](https://github.com/rajanchavda/weather-widget/issues)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-brightgreen.svg)](https://github.com/rajanchavda/weather-widget/commits/main)
@@ -195,8 +195,8 @@ The aurora background automatically changes color based on real-time weather con
 
 | Weather Type | Aurora Colors | Icon (Day) | Icon (Night) | Animated Effects |
 |--------------|---------------|------------|--------------|------------------|
-| **Clear** | Orange/Yellow (day)<br>Indigo/Purple (night) | ☀️ | 🌙 | ☀️ Sun with rotating rays and lens flare by day<br>⭐ Twinkling stars at night |
-| **Cloudy** | Gray/Blue | ☁️ | ☁️ | ☁️ Drifting clouds |
+| **Clear** | Orange/Yellow (day)<br>Indigo/Purple (night) | ☀️ | 🌙 | ☀️ Sun with rotating rays and lens flare by day<br>⭐ Twinkling stars at night<br>Mainly clear adds two faint clouds |
+| **Cloudy** | Gray/Blue | ☁️ | ☁️ | ⛅ Partly cloudy: sun or stars behind a few clouds<br>☁️ Overcast: more, grayer clouds |
 | **Fog** | Warm White/Gray (day)<br>Dark Blue (night) | 🌫️ | 🌫️ | 🌫️ Drifting fog wisps |
 | **Drizzle** | Blue/Purple | 🌧️ | 🌧️ | 💧 Sparse, slow drizzle (5 drops) |
 | **Rain / Freezing Rain** | Blue/Purple | 🌧️ | 🌧️ | 💧 Light 3-layer rain (10 drops) with wind & ripples |
@@ -220,7 +220,7 @@ The aurora background automatically changes color based on real-time weather con
 - **Thunderstorm Lightning**: Full-screen white flashes every 6 seconds (0.15s duration, 25% opacity)
 - **Snow**: 35 gentle snowflakes in three depth layers with wind drift and sine-wave flutter, over a faint frost line at the bottom edge
 - **Sun**: 12 slowly rotating rays, a pulsing halo, a drifting lens flare and floating dust motes
-- **Clouds**: 6 clouds drifting across the bar at different speeds and sizes
+- **Clouds**: 2 faint clouds when mainly clear, 3 when partly cloudy (with the sun or stars still showing), 6 grayer ones when overcast; dim and cool-tinted at night
 - **Fog**: 8 blurred wisps drifting across the top half of the bar
 - **Stars**: 4x density compared to typical apps (one star per 25px of width), deterministic twinkling patterns (roughly 3.4-12.6s cycles), and a shooting star every 15 seconds
 
@@ -389,6 +389,7 @@ WeatherOverlay/
 └── Tests/
     └── WeatherOverlayTests/
         ├── AppDelegateTests.swift
+        ├── CloudCoverTests.swift
         ├── ColorHelpersTests.swift
         ├── MenuBarManagerTests.swift
         ├── ModelsTests.swift
@@ -405,7 +406,7 @@ WeatherOverlay/
 
 ### Running Tests
 
-The project includes **266 unit tests** covering the logic and state layers. The SwiftUI drawing code itself is not unit tested, apart from the rain intensity parameters and the frame-rate cap.
+The project includes **270 unit tests** covering the logic and state layers. The SwiftUI drawing code itself is not unit tested, apart from the rain intensity and cloud cover parameters and the frame-rate cap.
 
 ```bash
 swift test

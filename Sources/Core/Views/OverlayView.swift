@@ -35,13 +35,14 @@ struct OverlayView: View {
 
                     let code = getEffectiveWeatherCode()
 
-                    if (code == 0 || code == 1) && !checkIsNight() {
+                    // Partly cloudy keeps the sun (or stars) behind its clouds; overcast hides them.
+                    if code >= 0 && code <= 2 && !checkIsNight() {
                         SunView(width: geometry.size.width, height: geometry.size.height, freezeDate: freezeDate)
                             .id("sun-\(code)")
                     }
 
-                    if code == 2 || code == 3 {
-                        CloudView(width: geometry.size.width, height: geometry.size.height, freezeDate: freezeDate)
+                    if let cover = CloudView.CloudCover(weatherCode: code) {
+                        CloudView(width: geometry.size.width, height: geometry.size.height, cover: cover, isNight: checkIsNight(), freezeDate: freezeDate)
                             .id("clouds-\(code)")
                     }
 
@@ -129,7 +130,7 @@ struct OverlayView: View {
 
     private func shouldShowStars() -> Bool {
         let code = getEffectiveWeatherCode()
-        return checkIsNight() && (code == 0 || code == 1)
+        return checkIsNight() && code >= 0 && code <= 2
     }
 
     private func currentAuroraColors() -> [Color] {

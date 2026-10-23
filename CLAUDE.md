@@ -111,8 +111,8 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 - SwiftUI view hierarchy for menu bar visuals
 - Visual layers, bottom to top (everything except the forecast line is inside `if settings.showAurora`):
   1. **Aurora Background**: Weather-responsive vertical gradient over the top half of the bar (`AuroraBackground`)
-  2. **Stars**: Clear night only (`StarsView`)
-  3. **Sky Effects**: Sun for clear day (`SunView`), clouds (`CloudView`), fog (`FogView`)
+  2. **Stars**: Clear, mainly clear and partly cloudy nights (`StarsView`)
+  3. **Sky Effects**: Sun by day for codes 0-2 (`SunView`), clouds for codes 1-3 (`CloudView`), fog (`FogView`)
   4. **Precipitation**: Rain with lightning for thunderstorms (`RainView`), snow (`SnowView`)
   5. **Temperature Forecast Line**: 12-hour graph (optional, `TemperatureLineView`)
 - Effective weather code and night flag: hover preview (`settings.isPreviewing`) wins, then the selected aurora style (`settings.manualWeatherCode`, `manualIsNight`), then `WeatherManager`
@@ -139,12 +139,12 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 **Snow Animation** (`SnowView.swift`, codes 71-77 and 85-86, not gated on precipitation):
 - 35 snowflakes in three depth layers with sine-wave flutter, wind drift and variable speeds, plus a 3px frost gradient along the bottom edge
 
-**Stars Animation** (`StarsView.swift`, codes 0-1 at night):
+**Stars Animation** (`StarsView.swift`, codes 0-2 at night):
 - High-density stars (1 per 25px width) with deterministic twinkling (about 3.4-12.6s cycles), and a shooting star every 15 seconds
 
 **Sun, Clouds, Fog** (Canvas animations, not emoji):
-- `SunView.swift` (codes 0-1 by day): 12 rotating rays, pulsing halo, drifting lens flare, 15 dust motes
-- `CloudView.swift` (codes 2-3): 6 clouds drifting at different speeds and sizes
+- `SunView.swift` (codes 0-2 by day): 12 rotating rays, pulsing halo, drifting lens flare, 15 dust motes
+- `CloudView.swift` (codes 1-3, `CloudView.CloudCover`): drifting clouds whose amount follows the code. `.few` (1, mainly clear) is 2 small faint clouds, `.partly` (2) is 3 white clouds over the sun or stars, `.overcast` (3) is 6 grayer clouds with no sun or stars. At night every level uses a dim, cool tint instead of white
 - `FogView.swift` (codes 45, 48): 8 blurred wisps over the top half of the bar; lighter tint by day, cooler by night
 
 #### 4. **OverlaySettings** (`Sources/Core/Settings/OverlaySettings.swift`)
@@ -158,8 +158,8 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 
 | Code Range | Weather Type | Visual Treatment |
 |------------|-------------|------------------|
-| 0-1 | Clear | Day: Orange/Yellow aurora, Sun emoji, animated sun<br>Night: Indigo/Purple aurora, Moon emoji, Twinkling stars |
-| 2-3 | Cloudy | Gray/Blue aurora, Cloud emoji, drifting clouds |
+| 0-1 | Clear | Day: Orange/Yellow aurora, Sun emoji, animated sun<br>Night: Indigo/Purple aurora, Moon emoji, Twinkling stars<br>Code 1 (mainly clear) adds 2 faint clouds |
+| 2-3 | Cloudy | Gray/Blue aurora, Cloud emoji. Code 2: sun (day) or stars (night) behind 3 clouds. Code 3: 6 grayer clouds, no sun or stars. Clouds are dim and cool at night |
 | 45, 48 | Fog | Day: warm White/Gray aurora; Night: dark Blue aurora; Fog emoji, drifting fog wisps |
 | 51-55 | Drizzle | Blue/Purple aurora, Rain emoji, Drizzle animation (5 drops, slow, gated on precipitation) |
 | 56-67 | Freezing Drizzle, Rain, Freezing Rain | Blue/Purple aurora, Rain emoji, Light rain animation (10 drops, 3-layer depth, gated on precipitation) |
@@ -347,13 +347,14 @@ log stream --level debug --predicate 'subsystem == "com.weatheroverlay.WeatherOv
 
 ### Test Suite
 - **Framework**: XCTest via Swift Package Manager (`swift test`)
-- **Total Tests**: 266
-- **Coverage**: Not measured (no coverage tooling in the repo). Tests exist for WeatherManager, MenuBarManager, UpdateManager, NotificationManager, OverlaySettings, Models, ColorHelpers, and parts of AppDelegate. The SwiftUI views are not rendered in tests; only `RainView.RainIntensity` and the frame-rate constant are checked
+- **Total Tests**: 270
+- **Coverage**: Not measured (no coverage tooling in the repo). Tests exist for WeatherManager, MenuBarManager, UpdateManager, NotificationManager, OverlaySettings, Models, ColorHelpers, and parts of AppDelegate. The SwiftUI views are not rendered in tests; only `RainView.RainIntensity` and the frame-rate constant and `CloudView.CloudCover` are checked
 
 ### Test Files
 | File | Tests | What It Covers |
 |------|-------|----------------|
 | `AppDelegateTests.swift` | 26 | Aurora-style hover preview through `NSMenuDelegate`, Eco Mode toggle flags and brightness save/restore, nested menu checkmarks, change-sink debounce (`observeChanges`), overlay window reuse/creation/cleanup on Space sync, 30 fps cap, persistence of manual vs. automatic Eco Mode, Reset to Defaults |
+| `CloudCoverTests.swift` | 4 | `CloudView.CloudCover` code mapping, cloud count per level, overcast and night tints |
 | `ColorHelpersTests.swift` | 24 | Temperature color boundaries, aurora colors (all WMO categories, day/night) |
 | `MenuBarManagerTests.swift` | 66 | Status item text (all emoji types), °C/°F formatting and rounding, error/no-data states, update-ready indicator, display modes, location row including the stale "last updated" note, `showUpdateInProgress()`, Eco Mode leaf and menu item, AQI display and toggle item, About item, Locations submenu, aurora submenu delegate, layout checkmark sync |
 | `ModelsTests.swift` | 19 | JSON decoding for all API types (incl. AQI, Geocoding), SavedLocation Codable round-trip, equality and persistence, AQICategory |
@@ -417,6 +418,7 @@ WeatherOverlay/
 └── Tests/
     └── WeatherOverlayTests/
         ├── AppDelegateTests.swift
+        ├── CloudCoverTests.swift
         ├── ColorHelpersTests.swift
         ├── MenuBarManagerTests.swift
         ├── ModelsTests.swift
