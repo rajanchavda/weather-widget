@@ -74,8 +74,8 @@ struct OverlayView: View {
                             .id("rain-heavy-\(code)")
                     }
 
-                    if (code >= 71 && code <= 77) || (code >= 85 && code <= 86) {
-                        SnowView(width: geometry.size.width, height: geometry.size.height, freezeDate: freezeDate)
+                    if let intensity = SnowView.SnowIntensity(weatherCode: code) {
+                        SnowView(width: geometry.size.width, height: geometry.size.height, intensity: intensity, freezeDate: freezeDate)
                             .id("snow-\(code)")
                     }
                 }

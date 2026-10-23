@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Weather API](https://img.shields.io/badge/Weather-Open--Meteo-brightgreen.svg)](https://open-meteo.com/)
 [![Battery Impact](https://img.shields.io/badge/Battery-Low%20Impact-success.svg)](#-performance--battery-optimization)
-[![Tests](https://img.shields.io/badge/Tests-270%20passing-brightgreen.svg)](#-development)
+[![Tests](https://img.shields.io/badge/Tests-274%20passing-brightgreen.svg)](#-development)
 [![GitHub stars](https://img.shields.io/github/stars/rajanchavda/weather-widget?style=social)](https://github.com/rajanchavda/weather-widget/stargazers)
 [![GitHub issues](https://img.shields.io/github/issues/rajanchavda/weather-widget.svg)](https://github.com/rajanchavda/weather-widget/issues)
 [![Maintained](https://img.shields.io/badge/Maintained-Yes-brightgreen.svg)](https://github.com/rajanchavda/weather-widget/commits/main)
@@ -200,9 +200,9 @@ The aurora background automatically changes color based on real-time weather con
 | **Fog** | Warm White/Gray (day)<br>Dark Blue (night) | 🌫️ | 🌫️ | 🌫️ Drifting fog wisps |
 | **Drizzle** | Blue/Purple | 🌧️ | 🌧️ | 💧 Sparse, slow drizzle (5 drops) |
 | **Rain / Freezing Rain** | Blue/Purple | 🌧️ | 🌧️ | 💧 Light 3-layer rain (10 drops) with wind & ripples |
-| **Snow** | White/Cyan | ❄️ | ❄️ | ❄️ Gentle drifting snowflakes |
+| **Snow** | White/Cyan | ❄️ | ❄️ | ❄️ Light (18 flakes), moderate (35) or heavy (60) snowfall |
 | **Showers** | Blue/Purple | 🌦️ | 🌦️ | 💧 Medium 3-layer rainfall (25 drops) |
-| **Snow Showers** | White/Cyan | 🌨️ | 🌨️ | ❄️ Gentle drifting snowflakes |
+| **Snow Showers** | White/Cyan | 🌨️ | 🌨️ | ❄️ Light (18 flakes) or heavy (60) snowfall |
 | **Thunderstorm** | Dark Purple | ⛈️ | ⛈️ | ⚡ Heavy slanted rain (40 drops) + lightning flashes |
 
 **Precipitation gate**: all rain animations, including the thunderstorm's lightning, are drawn only while the forecast reports more than 0 mm of precipitation for the current hour. The aurora colors and the menu bar icon follow the weather code alone.
@@ -218,7 +218,7 @@ The aurora background automatically changes color based on real-time weather con
   - **Advanced splashes**: Ripple with an expanding ring and a rebounding droplet, plus side splatter for the nearest drops
 - **Drizzle**: Falls more slowly than rain, with shorter drops
 - **Thunderstorm Lightning**: Full-screen white flashes every 6 seconds (0.15s duration, 25% opacity)
-- **Snow**: 35 gentle snowflakes in three depth layers with wind drift and sine-wave flutter, over a faint frost line at the bottom edge
+- **Snow**: 18-60 snowflakes depending on intensity (light 18, moderate 35, heavy 60) in three depth layers with wind drift and sine-wave flutter, over a frost line at the bottom edge. Heavier snow falls faster, drifts further in the wind and leaves a thicker frost line
 - **Sun**: 12 slowly rotating rays, a pulsing halo, a drifting lens flare and floating dust motes
 - **Clouds**: 2 faint clouds when mainly clear, 3 when partly cloudy (with the sun or stars still showing), 6 grayer ones when overcast; dim and cool-tinted at night
 - **Fog**: 8 blurred wisps drifting across the top half of the bar
@@ -396,6 +396,7 @@ WeatherOverlay/
         ├── NotificationManagerTests.swift
         ├── OverlaySettingsTests.swift
         ├── RainIntensityTests.swift
+        ├── SnowIntensityTests.swift
         ├── UpdateManagerTests.swift
         ├── WeatherManagerTests.swift
         └── Helpers/
@@ -406,7 +407,7 @@ WeatherOverlay/
 
 ### Running Tests
 
-The project includes **270 unit tests** covering the logic and state layers. The SwiftUI drawing code itself is not unit tested, apart from the rain intensity and cloud cover parameters and the frame-rate cap.
+The project includes **274 unit tests** covering the logic and state layers. The SwiftUI drawing code itself is not unit tested, apart from the rain, snow and cloud cover parameters and the frame-rate cap.
 
 ```bash
 swift test

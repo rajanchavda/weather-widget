@@ -3,12 +3,62 @@ import SwiftUI
 struct SnowView: View {
     let width: CGFloat
     let height: CGFloat
+    let intensity: SnowIntensity
     let freezeDate: Date?
 
-    init(width: CGFloat, height: CGFloat, freezeDate: Date? = nil) {
+    init(width: CGFloat, height: CGFloat, intensity: SnowIntensity, freezeDate: Date? = nil) {
         self.width = width
         self.height = height
+        self.intensity = intensity
         self.freezeDate = freezeDate
+    }
+
+    enum SnowIntensity {
+        case light, moderate, heavy
+
+        /// WMO 71/77/85 (slight snow, snow grains, slight showers), 73 (moderate), 75/86 (heavy); nil otherwise.
+        init?(weatherCode: Int) {
+            switch weatherCode {
+            case 71, 77, 85: self = .light
+            case 73: self = .moderate
+            case 75, 86: self = .heavy
+            default: return nil
+            }
+        }
+
+        var flakeCount: Int {
+            switch self {
+            case .light: return 18
+            case .moderate: return 35
+            case .heavy: return 60
+            }
+        }
+
+        /// Seconds for a mid-layer flake to cross the bar, before per-flake variation.
+        var baseSpeed: Double {
+            switch self {
+            case .light: return 5.0
+            case .moderate: return 4.0
+            case .heavy: return 3.2
+            }
+        }
+
+        /// Horizontal drift in points per second for the mid layer.
+        var windDrift: Double {
+            switch self {
+            case .light: return 6.0
+            case .moderate: return 8.0
+            case .heavy: return 14.0
+            }
+        }
+
+        var frostHeight: Double {
+            switch self {
+            case .light: return 2.0
+            case .moderate: return 3.0
+            case .heavy: return 4.0
+            }
+        }
     }
 
     var body: some View {
@@ -26,15 +76,13 @@ struct SnowView: View {
     }
 
     private func render(at time: TimeInterval, context: inout GraphicsContext, size: CGSize) {
-        let flakeCount = 35
-
-        for i in 0..<flakeCount {
+        for i in 0..<intensity.flakeCount {
             // Depth Layering (3D Parallax)
             let layerSeed = (i * 7) % 3
             let depthFactor = layerSeed == 0 ? 1.5 : (layerSeed == 1 ? 1.0 : 0.6)
 
             let offset = Double(i) * 0.2
-            let baseSpeed = 4.0 + Double((i * 17) % 15) / 10.0
+            let baseSpeed = intensity.baseSpeed + Double((i * 17) % 15) / 10.0
             let speed = baseSpeed / depthFactor // Foreground falls faster
             
             let cycleValue = (time + offset) / speed
@@ -51,7 +99,7 @@ struct SnowView: View {
             let flutter = sin(flutterPhase) * flutterAmplitude
             
             // Gentle continuous wind drift
-            let windDrift = time * 8.0 * depthFactor
+            let windDrift = time * intensity.windDrift * depthFactor
             let rawX = baseX + flutter + windDrift
             
             // Wrap around seamlessly
@@ -87,7 +135,7 @@ struct SnowView: View {
         }
         
         // Snow Accumulation Frost at the bottom
-        let pileHeight = 3.0
+        let pileHeight = intensity.frostHeight
         let pileRect = CGRect(x: 0, y: Double(size.height) - pileHeight, width: Double(size.width), height: pileHeight)
         let pileGradient = Gradient(colors: [.white.opacity(0.0), .white.opacity(0.4)])
         

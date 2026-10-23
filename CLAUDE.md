@@ -136,8 +136,15 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 - **Splashes**: Ripple ellipse with an expanding ring and a rebounding droplet; side splatter particles for near-layer drops
 - **Lightning**: `.heavy` only (`isThunderstorm`). Full-screen white flash (25% opacity, 0.15s duration, every 6 seconds). It is drawn inside `RainView`, so it is behind the same precipitation gate
 
-**Snow Animation** (`SnowView.swift`, codes 71-77 and 85-86, not gated on precipitation):
-- 35 snowflakes in three depth layers with sine-wave flutter, wind drift and variable speeds, plus a 3px frost gradient along the bottom edge
+**Snow Animation** (`SnowView.swift`, `SnowView.SnowIntensity`, not gated on precipitation):
+
+| Intensity | WMO codes | Flakes | `baseSpeed` (s per fall, mid layer) | `windDrift` (pt/s, mid layer) | `frostHeight` |
+|-----------|-----------|--------|-------------------------------------|-------------------------------|---------------|
+| `.light` | 71, 77, 85 | 18 | 5.0 | 6 | 2px |
+| `.moderate` | 73 | 35 | 4.0 | 8 | 3px |
+| `.heavy` | 75, 86 | 60 | 3.2 | 14 | 4px |
+
+- Flakes fall in three depth layers with sine-wave flutter, wind drift and variable speeds, over a frost gradient along the bottom edge
 
 **Stars Animation** (`StarsView.swift`, codes 0-2 at night):
 - High-density stars (1 per 25px width) with deterministic twinkling (about 3.4-12.6s cycles), and a shooting star every 15 seconds
@@ -163,9 +170,9 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 | 45, 48 | Fog | Day: warm White/Gray aurora; Night: dark Blue aurora; Fog emoji, drifting fog wisps |
 | 51-55 | Drizzle | Blue/Purple aurora, Rain emoji, Drizzle animation (5 drops, slow, gated on precipitation) |
 | 56-67 | Freezing Drizzle, Rain, Freezing Rain | Blue/Purple aurora, Rain emoji, Light rain animation (10 drops, 3-layer depth, gated on precipitation) |
-| 71-77 | Snow | White/Cyan aurora, Snowflake emoji, Snow animation (35 flakes) |
+| 71-77 | Snow | White/Cyan aurora, Snowflake emoji, Snow animation: light (71, 77) 18 flakes, moderate (73) 35, heavy (75) 60 |
 | 80-82 | Showers | Blue/Purple aurora, Shower emoji, Medium rain animation (25 drops, 3-layer depth, gated on precipitation) |
-| 85-86 | Snow Showers | White/Cyan aurora, Snow emoji, Snow animation (35 flakes) |
+| 85-86 | Snow Showers | White/Cyan aurora, Snow emoji, Snow animation: light (85) 18 flakes, heavy (86) 60 |
 | 95-99 | Thunderstorm | Dark purple aurora, Thunderstorm emoji, Heavy rain animation (40 drops, 3-layer depth) + Lightning flashes, both gated on precipitation |
 | Other | Unknown | Blue aurora, 🌤️ emoji, no animation |
 
@@ -347,8 +354,8 @@ log stream --level debug --predicate 'subsystem == "com.weatheroverlay.WeatherOv
 
 ### Test Suite
 - **Framework**: XCTest via Swift Package Manager (`swift test`)
-- **Total Tests**: 270
-- **Coverage**: Not measured (no coverage tooling in the repo). Tests exist for WeatherManager, MenuBarManager, UpdateManager, NotificationManager, OverlaySettings, Models, ColorHelpers, and parts of AppDelegate. The SwiftUI views are not rendered in tests; only `RainView.RainIntensity` and the frame-rate constant and `CloudView.CloudCover` are checked
+- **Total Tests**: 274
+- **Coverage**: Not measured (no coverage tooling in the repo). Tests exist for WeatherManager, MenuBarManager, UpdateManager, NotificationManager, OverlaySettings, Models, ColorHelpers, and parts of AppDelegate. The SwiftUI views are not rendered in tests; only `RainView.RainIntensity` and the frame-rate constant, `CloudView.CloudCover` and `SnowView.SnowIntensity` are checked
 
 ### Test Files
 | File | Tests | What It Covers |
@@ -361,6 +368,7 @@ log stream --level debug --predicate 'subsystem == "com.weatheroverlay.WeatherOv
 | `NotificationManagerTests.swift` | 18 | Alert classification per WMO code (freezing rain before rain, precipitation gate), onset-only alerts, look-ahead window, cooldown, freezing temperature in the selected unit, suppression (stale data, alerts off, no data), city switch |
 | `OverlaySettingsTests.swift` | 32 | Defaults, mutations, objectWillChange emission, enum coverage, display mode, eco mode, AQI toggle, UserDefaults persistence (round trip, invalid values, Eco Mode rules, in-memory mode) |
 | `RainIntensityTests.swift` | 4 | `dropCount`, `baseSpeed`, `baseHeight`, `windSway`, `isThunderstorm` for drizzle, light, medium, heavy |
+| `SnowIntensityTests.swift` | 4 | `SnowView.SnowIntensity` code mapping and `flakeCount`, `baseSpeed`, `windDrift`, `frostHeight` for light, moderate, heavy |
 | `UpdateManagerTests.swift` | 11 | GitHub release JSON parsing, version comparison, background check inside/outside an app bundle and on network error, result handling (flag the menu without installing) |
 | `WeatherManagerTests.swift` | 66 | Initial state, success fetch, failed refresh keeps last good data as stale (age limit, location switch, recovery), network error, saved location overrides geo, searchCities (top five, display names), night detection, stale response discard, saved locations (add/switch/remove/persist), `activeLocation`, legacy manual-location migration, AQI fetch, precipitation, geo-IP cache (lifetime, invalidation, fallback, resume, races) |
 
@@ -425,6 +433,7 @@ WeatherOverlay/
         ├── NotificationManagerTests.swift
         ├── OverlaySettingsTests.swift
         ├── RainIntensityTests.swift
+        ├── SnowIntensityTests.swift
         ├── UpdateManagerTests.swift
         ├── WeatherManagerTests.swift
         └── Helpers/
