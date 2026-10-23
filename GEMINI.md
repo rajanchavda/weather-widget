@@ -97,11 +97,11 @@ The geo-IP cache is invalidated by a network path change, by `resume()` and by `
 | File | Lines | Purpose |
 |------|-------|---------|
 | `AuroraBackground.swift` | 16 | Weather-responsive vertical gradient over the top half of the bar |
-| `RainView.swift` | 213 | Cinematic 3-layer rain with Canvas GPU rendering, lightning; `RainIntensity` enum |
-| `SnowView.swift` | 112 | Gentle snowfall animation via Canvas |
+| `RainView.swift` | 220 | Cinematic 3-layer rain with Canvas GPU rendering, lightning; `RainIntensity` enum |
+| `SnowView.swift` | 167 | Light, moderate or heavy snowfall via Canvas |
 | `StarsView.swift` | 93 | High-density twinkling stars and a shooting star for clear nights |
 | `SunView.swift` | 117 | Animated sun (rays, halo, lens flare) for clear day |
-| `CloudView.swift` | 85 | Drifting clouds for cloudy weather |
+| `CloudView.swift` | 157 | Drifting clouds; amount and tint follow cloud cover and night |
 | `FogView.swift` | 83 | Drifting blurred wisps for foggy weather |
 | `TemperatureLineView.swift` | 41 | Optional 12-hour temperature forecast graph |
 
@@ -131,14 +131,14 @@ Every animated view is driven by `TimelineView(.animation(minimumInterval: Overl
 
 | Code | Weather | Aurora Colors | Emoji | Animations |
 |------|---------|---------------|-------|------------|
-| 0-1 | Clear | Orange/Yellow (day)<br>Indigo/Purple (night) | ☀️/🌙 | Animated sun by day, twinkling stars at night |
-| 2-3 | Cloudy | Gray/Blue | ☁️ | Drifting clouds |
+| 0-1 | Clear | Orange/Yellow (day)<br>Indigo/Purple (night) | ☀️/🌙 | Animated sun by day, twinkling stars at night; code 1 adds 2 faint clouds |
+| 2-3 | Cloudy | Gray/Blue | ☁️ | Code 2: sun or stars behind 3 clouds; code 3: 6 grayer clouds. Dim, cool clouds at night |
 | 45, 48 | Fog | Warm White/Gray (day)<br>Dark Blue (night) | 🌫️ | Drifting fog wisps |
 | 51-55 | Drizzle | Blue/Purple | 🌧️ | Drizzle (5 drops, slow, gated on precipitation) |
 | 56-67 | Freezing Drizzle, Rain, Freezing Rain | Blue/Purple | 🌧️ | Light rain (10 drops, 3-layer depth, gated on precipitation) |
-| 71-77 | Snow | White/Cyan | ❄️ | Snow animation (35 flakes) |
+| 71-77 | Snow | White/Cyan | ❄️ | Snow animation: light (71, 77) 18 flakes, moderate (73) 35, heavy (75) 60 |
 | 80-82 | Showers | Blue/Purple | 🌦️ | Medium rain (25 drops, 3-layer depth, gated on precipitation) |
-| 85-86 | Snow Showers | White/Cyan | 🌨️ | Snow animation (35 flakes) |
+| 85-86 | Snow Showers | White/Cyan | 🌨️ | Snow animation: light (85) 18 flakes, heavy (86) 60 |
 | 95-99 | Thunderstorm | Dark purple | ⛈️ | Heavy rain (40 drops) + lightning, both gated on precipitation |
 | Other | Unknown | Blue | 🌤️ | - |
 
@@ -264,7 +264,7 @@ Displays 12-hour temperature forecast as a line graph at the bottom of the menu 
 Swift Package Manager (3 targets):
 - `WeatherOverlayCore` — Library target with all logic (supports `@testable import`)
 - `WeatherOverlay` — Executable target (thin bootstrap entry point)
-- `WeatherOverlayTests` — XCTest suite (266 tests)
+- `WeatherOverlayTests` — XCTest suite (280 tests)
 
 ```swift
 .target(name: "WeatherOverlayCore", path: "Sources/Core")
@@ -394,10 +394,11 @@ Well-named functions/variables are self-documenting. Comments only when non-obvi
 - User preferences (aurora toggle, forecast line, units, brightness, manual weather override, display mode, Eco Mode, weather alerts, AQI)
 - UserDefaults persistence
 
-### `Sources/Core/Views/OverlayView.swift` (~140 lines)
+### `Sources/Core/Views/OverlayView.swift` (~171 lines)
 - ZStack composition root
 - Dispatches to sub-views based on weather
 - Precipitation gate for rain, Eco Mode freeze, 30 fps frame interval
+- 1.5 s crossfade on weather changes, and the rain/snow particle build-up ramp (`OverlayAnimation`)
 
 ### `Sources/Core/Utils/ColorHelpers.swift` (~53 lines)
 - Aurora color mapping (getAuroraColors)
@@ -411,21 +412,24 @@ Well-named functions/variables are self-documenting. Comments only when non-obvi
 - UserNotifications authorization and delivery
 
 ### Visual Sub-views
-- `RainView.swift` (~213 lines) — 3-layer rain with lightning using TimelineView + Canvas
-- `SnowView.swift` (~112 lines) — Snowfall animation
+- `RainView.swift` (~220 lines) — 3-layer rain with lightning using TimelineView + Canvas
+- `SnowView.swift` (~167 lines) — Snowfall animation in three intensities
 - `StarsView.swift` (~93 lines) — High-density twinkling stars
 - `AuroraBackground.swift` (~16 lines) — Weather-responsive gradient
-- `SunView.swift`, `CloudView.swift`, `FogView.swift` (~117, 85, 83 lines) — Animated sun, clouds and fog
+- `SunView.swift`, `CloudView.swift`, `FogView.swift` (~117, 157, 83 lines) — Animated sun, clouds and fog
 - `TemperatureLineView.swift` (~41 lines) — Temperature forecast graph
 
-### Test Suite (266 tests)
+### Test Suite (280 tests)
 - **`AppDelegateTests.swift` (26)** — Aurora-style hover preview via NSMenuDelegate, Eco Mode toggle flags and brightness restore, nested menu checkmarks, change-sink debounce, overlay window reuse on Space sync, 30 fps cap, Eco Mode persistence rules, Reset to Defaults
+- **`CloudCoverTests.swift` (4)** — `CloudView.CloudCover` code mapping, cloud count per level, overcast and night tints
 - **`ColorHelpersTests.swift` (24)** — Temperature color boundaries, aurora colors for all WMO categories (day/night)
 - **`MenuBarManagerTests.swift` (66)** — Status item text for all weather conditions, °C/°F formatting and rounding, error/no-data/update-ready states, display modes, location title including the stale note, `showUpdateInProgress()`, Eco Mode, AQI, About item, Locations submenu, layout checkmark sync
 - **`ModelsTests.swift` (19)** — JSON decoding for WeatherResponse, GeoResponse, FreeGeoResponse, GeocodingResponse, AirQualityResponse; SavedLocation Codable round-trip, equality and persistence; AQICategory
 - **`NotificationManagerTests.swift` (18)** — Alert classification per WMO code, precipitation gate, onset-only alerts, look-ahead window, cooldown, freezing temperature in the selected unit, suppression rules, city switch
+- **`OverlayAnimationTests.swift` (6)** — Particle ramp opacity (staggered joins, fade-in, full strength after the ramp and in a frozen frame), ramp and crossfade durations
 - **`OverlaySettingsTests.swift` (32)** — Defaults, mutations, objectWillChange emission, WeatherUnit/AuroraStyle/StatusBarDisplayMode enum coverage, Eco Mode, AQI, UserDefaults persistence
 - **`RainIntensityTests.swift` (4)** — Drop count, speed, height, wind sway and thunderstorm flag for drizzle, light, medium, heavy
+- **`SnowIntensityTests.swift` (4)** — Code mapping, flake count, speed, wind drift and frost height for light, moderate, heavy snow
 - **`UpdateManagerTests.swift` (11)** — GitHub release JSON parsing, version comparison with `compare(_:options:.numeric)`, background check inside/outside an app bundle via URLProtocolMock, result handling
 - **`WeatherManagerTests.swift` (66)** — Initial state, success fetch, stale-data fallback on failure, network error, saved location overrides geo, searchCities (top five, picker titles), night detection, stale response discard via fetchGeneration guard, saved locations, `activeLocation`, legacy migration, AQI fetch, precipitation, geo-IP cache
 - **`Helpers/URLProtocolMock.swift`** — Custom URLProtocol subclass intercepting all URL requests; supports immediate and delayed responses for deterministic mock behavior

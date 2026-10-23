@@ -5,6 +5,7 @@ struct RainView: View {
     let height: CGFloat
     let intensity: RainIntensity
     let freezeDate: Date?
+    @State private var appearedAt = Date()
 
     init(width: CGFloat, height: CGFloat, intensity: RainIntensity, freezeDate: Date? = nil) {
         self.width = width
@@ -76,7 +77,13 @@ struct RainView: View {
             }
         }
 
+        // A frozen Eco Mode frame shows the full strength rather than the start of the ramp.
+        let elapsed = freezeDate == nil ? time - appearedAt.timeIntervalSinceReferenceDate : .infinity
+
         for i in 0..<intensity.dropCount {
+            let rampOpacity = OverlayAnimation.particleRampOpacity(index: i, count: intensity.dropCount, elapsed: elapsed)
+            if rampOpacity == 0 { continue }
+
             let offset = Double(i) * 0.11
 
             let layerSeed = (i * 7) % 3
@@ -98,7 +105,7 @@ struct RainView: View {
 
             let dropWidth = 1.0 * depthFactor
             let dropHeight = (intensity.baseHeight + Double((i * 13) % 6)) * depthFactor
-            let dropOpacity = 0.5 + (depthFactor * 0.3)
+            let dropOpacity = (0.5 + (depthFactor * 0.3)) * rampOpacity
 
             if progress < 0.9 {
                 let slantX = dropHeight * slantRatio
