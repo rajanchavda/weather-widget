@@ -90,7 +90,7 @@ brew upgrade rajanchavda/tap/weatheroverlay
    ```bash
    # Builds WeatherOverlay.app (ad-hoc signed) and WeatherOverlay.zip in the repository root.
    # The argument is the version written into the bundle (1.0.0 when omitted).
-   ./build_app.sh 2.4.1
+   ./build_app.sh 2.5.0
    cp -R WeatherOverlay.app /Applications/
    ```
 
@@ -486,7 +486,7 @@ A local signed and notarized build:
 ```bash
 CODESIGN_IDENTITY="Developer ID Application: Name (TEAMID)" \
 NOTARY_KEYCHAIN_PROFILE="<profile name>" \
-./build_app.sh 2.4.1
+./build_app.sh 2.5.0
 ```
 
 Repository secrets read by `release.yml`:
