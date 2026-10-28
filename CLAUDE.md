@@ -167,7 +167,7 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 
 | Code Range | Weather Type | Visual Treatment |
 |------------|-------------|------------------|
-| 0-1 | Clear | Day: Orange/Yellow aurora, Sun emoji, animated sun<br>Night: Indigo/Purple aurora, Moon emoji, Twinkling stars<br>Code 1 (mainly clear) adds 2 faint clouds |
+| 0-1 | Clear | Day: light Golden/Cream aurora, Sun emoji, animated sun<br>Night: Indigo/Purple aurora, Moon emoji, Twinkling stars<br>Code 1 (mainly clear) adds 2 faint clouds |
 | 2-3 | Cloudy | Gray/Blue aurora, Cloud emoji. Code 2: sun (day) or stars (night) behind 3 clouds. Code 3: 6 grayer clouds, no sun or stars. Clouds are dim and cool at night |
 | 45, 48 | Fog | Day: warm White/Gray aurora; Night: dark Blue aurora; Fog emoji, drifting fog wisps |
 | 51-55 | Drizzle | Blue/Purple aurora, Rain emoji, Drizzle animation (5 drops, slow, gated on precipitation) |
