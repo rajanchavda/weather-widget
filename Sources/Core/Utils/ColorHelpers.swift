@@ -21,7 +21,12 @@ func getAuroraColors(weatherCode: Int, isNight: Bool) -> [Color] {
         if isNight {
             return [Color.indigo.opacity(0.12), Color.purple.opacity(0.08), Color.clear]
         } else {
-            return [Color.orange.opacity(0.12), Color.yellow.opacity(0.08), Color.clear]
+            // Light golden tones; saturated orange at low opacity turns brown over a dark menu bar.
+            return [
+                Color(red: 1.0, green: 0.80, blue: 0.50).opacity(0.18),
+                Color(red: 1.0, green: 0.90, blue: 0.70).opacity(0.07),
+                Color.clear
+            ]
         }
     case 2, 3:
         return [Color.gray.opacity(0.22), Color(white: 0.7).opacity(0.15), Color.blue.opacity(0.08), Color.clear]
