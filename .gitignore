@@ -13,3 +13,6 @@ WeatherOverlay.zip
 # Packages directory (if using local dependencies)
 Packages/
 nohup.out
+
+# Local scratch files
+scratchpad/
