@@ -152,7 +152,7 @@ A minimalist macOS menu bar weather application that displays real-time weather 
 - High-density stars (1 per 25px width) with deterministic twinkling (about 3.4-12.6s cycles), and a shooting star every 15 seconds
 
 **Sun, Clouds, Fog** (Canvas animations, not emoji):
-- `SunView.swift` (codes 0-2 by day): 12 rotating rays, pulsing halo, drifting lens flare, 15 dust motes
+- `SunView.swift` (codes 0-2 by day, `SunView.horizontalOffset` 140pt right of center): soft radial disc and corona, two counter-rotating sets of tapered rays (8 long, 13 short) whose lengths shimmer independently, a warm bloom spilling sideways across the bar, an anamorphic streak, 5 lens ghosts on the sun-to-center axis, and 18 dust motes that glint near the sun. All sizes scale with the bar height; the glow layers share one 9 s breath
 - `CloudView.swift` (codes 1-3, `CloudView.CloudCover`): drifting clouds whose amount follows the code. `.few` (1, mainly clear) is 2 small faint clouds, `.partly` (2) is 3 white clouds over the sun or stars, `.overcast` (3) is 6 grayer clouds with no sun or stars. At night every level uses a dim, cool tint instead of white
 - `FogView.swift` (codes 45, 48): 8 blurred wisps over the top half of the bar; lighter tint by day, cooler by night
 
